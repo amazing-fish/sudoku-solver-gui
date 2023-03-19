@@ -3,8 +3,7 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 from torchvision import transforms
-
-from model.sudoku_resnet import SudokuResNet  # 假设你已经实现了一个名为SudokuCNN的卷积神经网络模型
+from model.sudoku_resnet import SudokuResNet
 
 
 def preprocess_image(image_path):
@@ -49,7 +48,7 @@ def recognize_sudoku_puzzle(image_path, model_path):
 
 
 if __name__ == "__main__":
-    image_path = "path/to/sudoku_image.jpg"
+    image_path = "dataset/img.png"
     model_path = "model/sudoku_model.pth"
     result = recognize_sudoku_puzzle(image_path, model_path)
     print(result)
