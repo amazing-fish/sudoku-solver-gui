@@ -1,97 +1,115 @@
-# Sudoku Solver with GUI
+# 基于图像识别的数独求解器（带界面）
 
-A Sudoku solver with a graphical user interface (GUI) that allows users to input Sudoku puzzles, solve them, display the results, and reset the puzzle. The application also checks the validity of user input.
+一个基于图像识别和卷积神经网络的数独求解器，具有图形用户界面。用户可以手动输入数独问题，也可以通过导入包含数独问题的图片来自动识别并求解。
 
-## Table of Contents
+## 功能
 
-[TOC]
+1. 手动输入数独题目。
+2. 通过导入图片自动识别数独题目。
+3. 验证输入的数独题目是否有效。
+4. 求解数独问题。
+5. 显示求解结果。
+6. 重置输入和结果。
 
+## 技术选型
 
+1. Python 3
+2. 图形用户界面：Tkinter
+3. 数独求解算法：回溯法
+4. 图像处理：OpenCV
+5. 卷积神经网络：TensorFlow 或 PyTorch
 
-## Features
+## 项目结构
 
-- Enter Sudoku puzzles
-- Solve Sudoku puzzles
-- Display the solution
-- Reset the puzzle
-- Validate user input
-
-## Technologies
-
-- Python 3
-- GUI: Tkinter
-- Sudoku solving algorithm: Backtracking
-
-## Module Structure
-
-- Main interface: Displays the Sudoku grid, allows input of the puzzle and displays the result
-- Solver module: Implements the Sudoku solving algorithm
-- Input validation: Checks the validity of user input
-- Reset functionality: Clears input and results
-
-## Installation
-
-1. Install Python 3.x: [Download Python](https://www.python.org/downloads/)
-2. Clone this repository:
-
-```bash
-git clone https://github.com/amazing-fish/sudoku-solver-gui.git
+```
+sudoku-solver-gui/
+│
+├─ sudoku/
+│   ├─ solver.py           # 数独求解算法实现
+│   └─ validator.py        # 数独输入验证实现
+│
+├─ gui/
+│   └─ interface.py        # 图形用户界面实现
+│
+├─ image_processing/
+│   ├─ image_to_puzzle.py  # 图像处理和数独识别实现
+│   └─ model/              # 存放卷积神经网络模型
+│
+├─ main.py                 # 主程序入口
+├─ requirements.txt        # 项目依赖列表
+└─ README.md               # 项目文档
 ```
 
-1. Install the required libraries:
+## 如何使用
 
-```bash
+### 安装依赖
+
+在项目根目录下运行以下命令以安装所需的库：
+
+```
 pip install -r requirements.txt
 ```
 
-## Usage
+### 运行程序
 
-1. Run the Sudoku solver:
+在项目根目录下运行以下命令以启动数独求解器：
 
-```bash
+```
 python main.py
 ```
 
-1. Enter the Sudoku puzzle in the GUI, and click the "Solve" button.
-2. View the solution in the GUI.
-3. Click the "Reset" button to clear the input and results.
+### 使用说明
 
-## Learning Resources
+1. 在图形界面中手动输入数独题目，或点击 "Load Image" 按钮导入包含数独问题的图片。
+2. 点击 "Solve" 按钮以求解数独问题。
+3. 查看求解结果。
+4. 点击 "Reset" 按钮以清空输入和结果。
 
-### Tutorials
+## 学习文档
 
-- Python basics: [Python Tutorial](https://docs.python.org/3/tutorial/index.html)
-- Tkinter tutorial: [Tkinter Tutorial](https://tkdocs.com/tutorial/index.html)
-- Backtracking Sudoku solver: [Sudoku Backtracking](https://www.geeksforgeeks.org/sudoku-backtracking-7/)
+### 教程
 
-### Learning Modules and Sequence
+1. Python基础：https://docs.python.org/3/tutorial/index.html
+2. Tkinter教程：https://tkdocs.com/tutorial/index.html
+3. 回溯法数独求解：https://www.geeksforgeeks.org/sudoku-backtracking-7/
+4. OpenCV教程：https://docs.opencv.org/master/d9/df8/tutorial_root.html
+5. TensorFlow教程：https://www.tensorflow.org/tutorials
+6. PyTorch教程：https://pytorch.org/tutorials/
 
-#### a. Python Basics
+### 学习模块与顺序
 
-- Data types (lists, dictionaries, tuples, etc.)
-- Control flow (if, for, while, etc.)
-- Functions and modules
+1. 图形用户界面（Tkinter）
+   - 窗口与布局
+   - 控件（按钮、标签、文本框等）
+   - 事件处理与绑定
+2. 数独求解算法（回溯法）
+   - 基本概念与原理
+   - 算法实现与优化
+3. 图像处理（OpenCV）
+   - 读取、显示和保存图像
+   - 图像预处理（缩放、灰度、二值化等）
+   - 图像分割和提取
+4. 卷积神经网络（TensorFlow 或 PyTorch）
+   - 神经网络基本概念
+   - 构建和训练卷积神经网络
+   - 使用预训练模型进行图像识别
+5. 集成和调试
+   - 将各个模块组合到一起
+   - 调试和优化程序性能
+   - 测试程序功能
 
-#### b. Graphical User Interface (Tkinter)
+## 贡献指南
 
-- Windows and layout
-- Widgets (buttons, labels, text boxes, etc.)
-- Event handling and binding
+如果你对本项目感兴趣并希望对其进行改进，请遵循以下步骤：
 
-#### c. Sudoku Solving Algorithm (Backtracking)
+1. Fork 本项目到你的 GitHub 账户。
+2. 克隆你的 Fork 到本地。
+3. 创建一个新的分支以进行更改。
+4. 完成你的修改并提交更改。
+5. 在 GitHub 上创建一个 Pull Request 以请求合并到主项目。
 
-- Basic concepts and principles
-- Algorithm implementation and optimization
+在提交 Pull Request 之前，请确保你的代码符合项目的代码风格，并在项目的各个模块中进行了充分的测试。
 
-#### d. Input Validation
+## 许可证
 
-- Data validity checking
-- Exception handling
-
-## Contributing
-
-Contributions are welcome! Please read the [contributing guidelines](https://chat.openai.com/CONTRIBUTING.md) before submitting a pull request.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](https://chat.openai.com/LICENSE.md) file for details.
+该项目采用 [MIT 许可证]()。在遵循许可证要求的前提下，你可以自由地使用、修改和分发本项目的代码。
