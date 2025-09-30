@@ -1,8 +1,14 @@
+import os
+
 import cv2
 import numpy as np
 import torch
 from torchvision import transforms
-from model.sudoku_resnet import SudokuResNet
+
+from image_processing.model.sudoku_resnet import SudokuResNet
+
+
+DEFAULT_MODEL_PATH = os.path.join(os.path.dirname(__file__), "model", "sudoku_model.pth")
 
 
 def preprocess_image(image_path):
@@ -41,12 +47,25 @@ def output_to_puzzle(output):
     return puzzle
 
 
-def recognize_sudoku_puzzle(image_path, model_path):
+def _load_model(model_path):
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"未找到模型文件: {model_path}\n"
+            f"请将训练好的模型权重放置在此路径或在调用时提供 model_path 参数。"
+        )
+
     model = SudokuResNet()
     state_dict = torch.load(model_path, map_location="cpu")
     model.load_state_dict(state_dict)
     model.eval()
+    return model
 
+
+def recognize_sudoku_puzzle(image_path, model_path=None):
+    if model_path is None:
+        model_path = DEFAULT_MODEL_PATH
+
+    model = _load_model(model_path)
     image = preprocess_image(image_path)
     output = predict_sudoku(model, image)
     puzzle = output_to_puzzle(output)
@@ -56,6 +75,6 @@ def recognize_sudoku_puzzle(image_path, model_path):
 
 if __name__ == "__main__":
     image_path = "dataset/img.png"
-    model_path = "model/sudoku_model.pth"
+    model_path = DEFAULT_MODEL_PATH
     result = recognize_sudoku_puzzle(image_path, model_path)
     print(result)
