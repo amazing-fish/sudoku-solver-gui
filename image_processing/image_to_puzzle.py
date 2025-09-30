@@ -1,16 +1,21 @@
 import cv2
 import numpy as np
 import torch
-from torch.autograd import Variable
 from torchvision import transforms
 from model.sudoku_resnet import SudokuResNet
 
 
 def preprocess_image(image_path):
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        raise ValueError(f"无法读取图像: {image_path}")
+
     resized_image = cv2.resize(image, (252, 252))  # 调整图像尺寸
-    normalized_image = resized_image / 255.0  # 归一化像素值
-    return normalized_image
+    normalized_image = resized_image.astype("float32") / 255.0  # 归一化像素值
+
+    # ResNet 期望三通道输入，这里将灰度图复制到三个通道
+    image_3ch = np.stack([normalized_image] * 3, axis=-1)
+    return image_3ch
 
 
 def predict_sudoku(model, image):
@@ -19,17 +24,18 @@ def predict_sudoku(model, image):
     ])
     image_tensor = transform(image)
     image_tensor = image_tensor.unsqueeze(0)
-    image_variable = Variable(image_tensor)
-    output = model(image_variable)
+    with torch.no_grad():
+        output = model(image_tensor)
     return output
 
 
 def output_to_puzzle(output):
+    predictions = output.squeeze(0).detach().cpu().numpy()
     puzzle = np.zeros((9, 9), dtype=int)
     for i in range(9):
         for j in range(9):
-            cell_probs = output[i * 9 + j].detach().numpy()
-            cell_value = np.argmax(cell_probs)
+            cell_probs = predictions[i, j]
+            cell_value = int(np.argmax(cell_probs))
             if cell_value != 0:
                 puzzle[i][j] = cell_value
     return puzzle
@@ -37,7 +43,8 @@ def output_to_puzzle(output):
 
 def recognize_sudoku_puzzle(image_path, model_path):
     model = SudokuResNet()
-    model.load_state_dict(torch.load(model_path))
+    state_dict = torch.load(model_path, map_location="cpu")
+    model.load_state_dict(state_dict)
     model.eval()
 
     image = preprocess_image(image_path)
