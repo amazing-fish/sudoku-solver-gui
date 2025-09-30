@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import torch
 from torchvision import transforms
-from model.sudoku_resnet import SudokuResNet
+from image_processing.model.sudoku_resnet import SudokuResNet
 
 
 def preprocess_image(image_path):
