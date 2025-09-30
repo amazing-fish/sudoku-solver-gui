@@ -16,7 +16,7 @@ def train(model, dataloader, criterion, optimizer, device):
 
         optimizer.zero_grad()
         outputs = model(images)
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs.view(-1, 10), labels.view(-1))
         loss.backward()
         optimizer.step()
 

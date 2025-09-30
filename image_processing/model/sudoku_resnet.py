@@ -13,10 +13,11 @@ class SudokuResNet(nn.Module):
 
         # 添加自定义的全连接层，输出为9 * 9 * 10
         self.features = nn.Sequential(*layers)
-        self.fc = nn.Linear(512, 9 * 9 * 10)
+        self.fc = nn.Linear(2048, 9 * 9 * 10)
 
     def forward(self, x):
         x = self.features(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
+        x = x.view(x.size(0), 9, 9, 10)
         return x
