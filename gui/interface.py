@@ -2,7 +2,8 @@ import tkinter as tk
 from tkinter import messagebox
 from sudoku.solver import solve_sudoku
 from sudoku.validator import is_valid_input
-
+from tkinter import filedialog
+from image_processing.image_to_puzzle import recognize_sudoku_puzzle
 
 class SudokuGUI(tk.Tk):
     def __init__(self):
@@ -11,7 +12,8 @@ class SudokuGUI(tk.Tk):
         self.title("Sudoku Solver")
         self.geometry("370x310")
         self.resizable(0, 0)
-
+        self.load_image_button = tk.Button(self, text="Load Image", command=self.load_image)
+        self.load_image_button.grid(row=10, column=0, columnspan=9, pady=5)
         self.entries = [[tk.Entry(self, width=3, font=("Arial", 14), justify="center") for _ in range(9)] for _ in
                         range(9)]
 
@@ -24,6 +26,14 @@ class SudokuGUI(tk.Tk):
 
         self.reset_button = tk.Button(self, text="Reset", command=self.reset)
         self.reset_button.grid(row=9, column=5, columnspan=4, pady=5)
+
+    def load_image(self):
+        image_file = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg;*.png")])
+        if not image_file:
+            return
+
+        puzzle = recognize_sudoku_puzzle(image_file)
+        self.set_puzzle(puzzle)
 
     def get_puzzle(self):
         puzzle = []
