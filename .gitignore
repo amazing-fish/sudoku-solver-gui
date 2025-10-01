@@ -2,6 +2,7 @@
 */__pycache__/
 build/
 dataset/
+artifacts/
 sudoku_model.pth
 *.pth
 *.pt

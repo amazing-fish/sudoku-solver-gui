@@ -60,6 +60,15 @@ else:
             raise RuntimeError("无法导入 torch/torchvision，无法创建真实模型")
 
 
+def create_torch_model(*, pretrained: bool = True) -> "_TorchSudokuModel":
+    """创建用于训练或推理的原生 torch 模型。"""
+
+    if torch is None or nn is None or resnet101 is None:  # pragma: no cover - 需 torch 环境
+        raise RuntimeError("缺少 torch/torchvision 依赖，无法构建真实模型")
+
+    return _TorchSudokuModel(pretrained=pretrained)
+
+
 class SudokuResNet:
     """统一封装的数独识别模型调用接口。"""
 
@@ -113,9 +122,9 @@ def load_model(model_path: Path | str, *, map_location: str | "torch.device" = "
         logger.warning("加载模型权重失败，将使用占位模型: %s", exc)
         return SudokuResNet()
 
-    torch_model = _TorchSudokuModel(pretrained=False)
+    torch_model = create_torch_model(pretrained=False)
     torch_model.load_state_dict(state_dict)
     return SudokuResNet(torch_model=torch_model)
 
 
-__all__ = ["SudokuResNet", "load_model"]
+__all__ = ["SudokuResNet", "create_torch_model", "load_model"]

@@ -74,10 +74,52 @@ python -m image_processing.model.build_model
 拥有真实的训练权重，可直接用其替换生成的占位文件；提交代码前请勿将真实
 的 `.pth` 或 `.pt` 文件加入版本库。
 
-> 💡 如果希望使用真实模型进行识别，请确保安装了 `torch` 与 `torchvision`
-> （版本需与训练权重兼容），并将模型权重保存为 `sudoku_model.pth`/`pt`。
-> 程序会优先尝试加载该文件；若加载失败或依赖缺失，则自动退回到占位模型
-> 并给出日志提示。
+> 💡 如果希望使用真实模型进行识别，请确保安装了 `torch`、`torchvision` 与
+> `Pillow`（版本需与训练权重兼容），并将模型权重保存为 `sudoku_model.pth`/
+> `pt`。程序会优先尝试加载该文件；若加载失败或依赖缺失，则自动退回到占
+> 位模型并给出日志提示。
+
+### 端到端训练与验证流程
+
+项目提供完整脚本，用于从生成数据集到训练、验证与推理的闭环流程。
+
+1. **生成合成数据集**
+
+   ```bash
+   python -m image_processing.model.data_generation --samples 5000 \
+       --output artifacts/datasets/synthetic_train.npz
+   ```
+
+   命令会同时生成一个同名的 `.json` 元数据文件，记录样本数量和网格尺寸。你
+   可以通过 `--seed` 保证数据集可复现。
+
+2. **训练模型**
+
+   ```bash
+   python -m image_processing.model.train artifacts/datasets/synthetic_train.npz \
+       --epochs 20 --batch-size 64 --output image_processing/model/sudoku_model.pth
+   ```
+
+   训练脚本会自动划分验证集、输出每轮的损失与精度，并将最佳权重保存到指
+   定位置。默认输出路径与应用加载路径一致，因此训练完成即可直接用于图像
+   识别。
+
+3. **评估模型**
+
+   可使用独立的验证集（例如通过再次运行数据生成脚本创建）来量化效果：
+
+   ```bash
+   python -m image_processing.model.evaluate artifacts/datasets/synthetic_val.npz \
+       --model image_processing/model/sudoku_model.pth
+   ```
+
+4. **识别图片**
+
+   完成训练后，界面或命令行调用 `image_processing.image_to_puzzle.recognize_sudoku_puzzle`
+   即会优先加载训练出的真实权重，实现端到端的识别流程。
+
+如暂时不具备训练条件，可继续使用占位模型保证功能演示；一旦具备真实权
+重或使用上述脚本重新训练，即可无缝升级到真实推理。
 
 ### 使用说明
 
