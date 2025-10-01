@@ -58,6 +58,22 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### 构建默认模型文件
+
+首次运行或上传图片识别数独前，请确保已经生成模型占位文件。项目提供了
+一个便捷脚本来创建轻量级占位模型（未训练，仅用于避免缺失文件导致的错
+误）。
+
+在项目根目录执行：
+
+```
+python -m image_processing.model.build_model
+```
+
+脚本会在 `image_processing/model/` 目录下生成 `sudoku_model.pth` 文件。若你
+使用了真实的训练权重，请自行替换该文件；提交代码前请勿将真实的 `.pth`
+或 `.pt` 文件加入版本库。
+
 ### 使用说明
 
 1. 在图形界面中手动输入数独题目，或点击 "Load Image" 按钮导入包含数独问题的图片。

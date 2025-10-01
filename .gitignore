@@ -2,3 +2,6 @@
 */__pycache__/
 build/
 dataset/
+sudoku_model.pth
+*.pth
+*.pt
