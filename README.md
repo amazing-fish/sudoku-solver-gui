@@ -71,8 +71,13 @@ python -m image_processing.model.build_model
 ```
 
 脚本会在 `image_processing/model/` 目录下生成 `sudoku_model.pth` 文件。若你
-使用了真实的训练权重，请自行替换该文件；提交代码前请勿将真实的 `.pth`
-或 `.pt` 文件加入版本库。
+拥有真实的训练权重，可直接用其替换生成的占位文件；提交代码前请勿将真实
+的 `.pth` 或 `.pt` 文件加入版本库。
+
+> 💡 如果希望使用真实模型进行识别，请确保安装了 `torch` 与 `torchvision`
+> （版本需与训练权重兼容），并将模型权重保存为 `sudoku_model.pth`/`pt`。
+> 程序会优先尝试加载该文件；若加载失败或依赖缺失，则自动退回到占位模型
+> 并给出日志提示。
 
 ### 使用说明
 

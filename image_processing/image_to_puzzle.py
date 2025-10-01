@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 
 from image_processing.model import DEFAULT_MODEL_PATH, ensure_model_file
-from image_processing.model.sudoku_resnet import SudokuResNet
+from image_processing.model.sudoku_resnet import SudokuResNet, load_model
 
 
 def preprocess_image(image_path: Path | str) -> np.ndarray:
@@ -21,7 +21,7 @@ def preprocess_image(image_path: Path | str) -> np.ndarray:
 
 
 def predict_sudoku(model: SudokuResNet, image: np.ndarray) -> np.ndarray:
-    image_tensor = np.expand_dims(image, axis=0)
+    image_tensor = np.expand_dims(image, axis=0).astype("float32", copy=False)
     output = model(image_tensor)
     return output
 
@@ -40,11 +40,8 @@ def output_to_puzzle(output: np.ndarray) -> np.ndarray:
 
 def _load_model(model_path: Path | str) -> SudokuResNet:
     model_path = ensure_model_file(model_path)
-
-    # 占位模型无需实际加载权重，保持接口一致即可
-    model = SudokuResNet()
-    model.eval()
-    return model
+    model = load_model(model_path)
+    return model.eval()
 
 
 def recognize_sudoku_puzzle(image_path: Path | str, model_path: Path | str | None = None) -> np.ndarray:
