@@ -135,6 +135,9 @@ def train_model(
         unit="epoch",
     )
 
+    final_train_loss = 0.0
+    final_test_accuracy = 0.0
+
     for epoch in epoch_iterable:
         model.train()
         running_loss = 0.0
@@ -152,16 +155,23 @@ def train_model(
 
         train_loss = running_loss / len(train_loader.dataset)
         test_accuracy = evaluate(model, test_loader, device_obj)
-        logger.info(
-            "Epoch %s/%s 完成: train_loss=%.6f, test_acc=%.4f",
-            epoch,
-            epochs,
-            train_loss,
-            test_accuracy,
+        final_train_loss = train_loss
+        final_test_accuracy = test_accuracy
+        epoch_iterable.set_description(f"Epoch {epoch}/{epochs}")
+        epoch_iterable.set_postfix(
+            train_loss=f"{train_loss:.6f}",
+            test_acc=f"{test_accuracy:.4f}",
         )
+        epoch_iterable.update(0)
 
     model_path = Path(model_path)
     model_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), model_path)
+    logger.info(
+        "训练完成，共运行 %s 个 epoch: final_train_loss=%.6f, final_test_acc=%.4f",
+        epochs,
+        final_train_loss,
+        final_test_accuracy,
+    )
     logger.info("模型已保存到 %s", model_path.resolve())
     return model
