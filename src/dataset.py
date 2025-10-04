@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import json
+import time
 from typing import Tuple
 
 import numpy as np
@@ -71,13 +72,19 @@ class SyntheticDigitDataset(Dataset):
         images: list[torch.Tensor] = []
         labels: list[int] = []
         total_target = self.config.samples_per_digit * len(digits)
-        progress_step = max(1, total_target // 20)
+        progress_step = max(1, total_target // 50)
 
         logger.info(
             "正在生成合成数据集: 目标样本数=%s, digit种类=%s, 缓存路径=%s",
             total_target,
             len(digits),
             cache_path,
+        )
+
+        start_time = time.perf_counter()
+        logger.info(
+            "数据合成进度: 0/%s (0.0%%), 耗时=0.0s, 速度=0.0样本/s, 预计剩余=未知",
+            total_target,
         )
 
         produced = 0
@@ -93,11 +100,17 @@ class SyntheticDigitDataset(Dataset):
                 produced += 1
                 if produced % progress_step == 0 or produced == total_target:
                     percent = produced / total_target * 100
+                    elapsed = time.perf_counter() - start_time
+                    rate = produced / elapsed if elapsed > 0 else 0.0
+                    eta = (total_target - produced) / rate if rate > 0 else float("inf")
                     logger.info(
-                        "数据合成进度: %s/%s (%.1f%%)",
+                        "数据合成进度: %s/%s (%.1f%%), 耗时=%.1fs, 速度=%.1f样本/s, 预计剩余=%.1fs",
                         produced,
                         total_target,
                         percent,
+                        elapsed,
+                        rate,
+                        eta,
                     )
 
         self.images = torch.stack(images, dim=0)
@@ -108,7 +121,13 @@ class SyntheticDigitDataset(Dataset):
             {"images": self.images, "labels": self.labels, "metadata": metadata},
             cache_path,
         )
-        logger.info("合成数据集准备完成并已缓存: 样本数=%s", self.labels.numel())
+        total_elapsed = time.perf_counter() - start_time
+        logger.info(
+            "合成数据集准备完成并已缓存: 样本数=%s, 总耗时=%.1fs, 平均速度=%.1f样本/s",
+            self.labels.numel(),
+            total_elapsed,
+            self.labels.numel() / total_elapsed if total_elapsed > 0 else 0.0,
+        )
 
     def _create_sample(
         self, digit: int, rng: np.random.Generator
