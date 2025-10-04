@@ -11,7 +11,6 @@ pip install -r requirements.txt
 ### 字体资源
 
 训练与推理默认使用金山 WPS 中的 `DejaVuMathTeXGyre.ttf` 字体，路径为 `C:\ProgramData\kingsoft\office6\omath\DejaVuMathTeXGyre.ttf`。如需使用其他字体，可通过环境变量 `SUDOKU_FONT_PATH` 指定绝对路径。
-
 ## 运行
 
 运行前请准备好待识别的数独图片（PNG 格式）。默认路径为 `data/puzzle.png`，可参考 `data/README.md` 了解图片准备要求。
@@ -23,7 +22,6 @@ python main.py
 ```
 
 训练与推理阶段会输出详细的 INFO 日志，包括命令行参数、实际使用的计算设备、合成数据集的生成/缓存进度以及推理填充的数字数量，便于排查“选择了 CUDA 但实际运行在 CPU”等问题。
-
 默认会训练 3 个周期，每次运行都会重新训练并在终端打印识别出来的数独棋盘内容。如果需要自定义训练与推理参数，可以使用以下可选参数：
 
 ```bash
@@ -52,7 +50,6 @@ python main.py \
 生成的数据会自动缓存在项目根目录下的 `.cache` 文件夹中，后续运行在字体与预处理配置未变化的情况下会直接加载缓存，大幅缩短每次训练前的等待时间。如需重新生成数据，可删除对应缓存文件或清空 `.cache` 目录。
 
 当需要观察合成过程时，可通过 `--synthetic-progress-interval` 控制日志刷新频率；日志会额外展示累计尝试次数与当前 digit 的尝试次数，便于诊断空白格生成等问题。对于拥有 GPU 的环境，可通过 `--synthetic-backend gpu --synthetic-device cuda:0` 启用 GPU 预处理，并用 `--synthetic-batch-size` 调整 GPU 上的批量处理规模，以提高吞吐量。
-
 ## 项目结构
 
 ```
