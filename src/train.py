@@ -16,6 +16,7 @@ from torchmetrics.functional.classification import (
     multiclass_precision,
     multiclass_recall,
 )
+from torch.optim.swa_utils import AveragedModel
 from tqdm.auto import tqdm
 from torch.cuda.amp import GradScaler, autocast
 
@@ -279,14 +280,15 @@ def train_model(
     device: str | torch.device | None = None,
     *,
     eval_batch_size: int | None = None,
-    optimizer_name: str = "adamw",
-    weight_decay: float = 1e-2,
-    scheduler: str | None = "onecycle",
+    optimizer_name: str = "adam",
+    weight_decay: float = 0.0,
+    scheduler: str | None = None,
     label_smoothing: float = 0.0,
-    max_grad_norm: float | None = 1.0,
+    max_grad_norm: float | None = None,
     patience: int | None = None,
     best_model_path: str | os.PathLike[str] | None = None,
     use_amp: bool | None = None,
+    ema_decay: float = 0.0,
     synthetic_backend: str = "cpu",
     synthetic_device: str | None = None,
     synthetic_batch_size: int = 256,
@@ -324,8 +326,13 @@ def train_model(
         best_model_path = model_path.with_name(f"{model_path.stem}_best{model_path.suffix}")
     best_model_path = Path(best_model_path)
 
+    if ema_decay < 0.0 or ema_decay >= 1.0:
+        if ema_decay != 0.0:
+            raise ValueError("ema_decay 必须位于 [0, 1) 区间，0 表示禁用")
+        ema_decay = 0.0
+
     logger.info(
-        "训练参数: epochs=%s, batch_size=%s, eval_batch_size=%s, learning_rate=%s, optimizer=%s, weight_decay=%s, scheduler=%s, label_smoothing=%s, max_grad_norm=%s, patience=%s, device=%s, synthetic_backend=%s, synthetic_device=%s, synthesis_batch=%s, synthetic_progress_interval=%ss",
+        "训练参数: epochs=%s, batch_size=%s, eval_batch_size=%s, learning_rate=%s, optimizer=%s, weight_decay=%s, scheduler=%s, label_smoothing=%s, max_grad_norm=%s, patience=%s, ema_decay=%s, device=%s, synthetic_backend=%s, synthetic_device=%s, synthesis_batch=%s, synthetic_progress_interval=%ss",
         epochs,
         batch_size,
         eval_batch_size or batch_size,
@@ -336,6 +343,7 @@ def train_model(
         label_smoothing,
         max_grad_norm,
         patience,
+        ema_decay,
         device_obj,
         synthetic_backend,
         synthetic_device or "auto",
@@ -369,6 +377,13 @@ def train_model(
     )
     scaler = GradScaler(enabled=amp_enabled)
 
+    ema_model: AveragedModel | None = None
+    if 0.0 < ema_decay < 1.0:
+        avg_fn = lambda avg_param, model_param, num_avg: ema_decay * avg_param + (1.0 - ema_decay) * model_param
+        ema_model = AveragedModel(model, avg_fn=avg_fn)
+        ema_model.to(device_obj)
+        logger.info("启用参数 EMA: decay=%.4f", ema_decay)
+
     history: list[Dict[str, Any]] = []
     best_state: Dict[str, torch.Tensor] | None = None
     best_metrics: Dict[str, Any] | None = None
@@ -388,6 +403,7 @@ def train_model(
         "label_smoothing": label_smoothing,
         "max_grad_norm": max_grad_norm,
         "patience": patience,
+        "ema_decay": ema_decay,
         "device": str(device_obj),
         "synthetic_backend": synthetic_backend,
         "synthetic_device": synthetic_device or "auto",
@@ -420,11 +436,13 @@ def train_model(
                 loss = criterion(outputs, labels)
 
             scaler.scale(loss).backward()
-            if max_grad_norm and max_grad_norm > 0:
+            if max_grad_norm is not None and max_grad_norm > 0:
                 scaler.unscale_(optimizer)
                 nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
+            if ema_model is not None:
+                ema_model.update_parameters(model)
             if scheduler_obj is not None and scheduler_batch_step:
                 scheduler_obj.step()
 
@@ -453,8 +471,9 @@ def train_model(
         train_accuracy = train_correct / seen_samples
         train_top3 = train_top3_correct / seen_samples
 
+        eval_target_model = ema_model.module if ema_model is not None else model
         val_metrics = evaluate(
-            model,
+            eval_target_model,
             test_loader,
             device_obj,
             criterion=eval_criterion,
@@ -495,7 +514,7 @@ def train_model(
         improved = score > best_score + 1e-6
         if improved or best_state is None:
             best_score = score
-            best_state = deepcopy(model.state_dict())
+            best_state = deepcopy(eval_target_model.state_dict())
             best_metrics = {
                 key: float(value) if isinstance(value, (int, float)) else value
                 for key, value in val_metrics.items()
@@ -543,6 +562,8 @@ def train_model(
         }
 
     model.load_state_dict(best_state)
+    if ema_model is not None:
+        ema_model.module.load_state_dict(best_state)
 
     if best_metrics is None:
         best_metrics = {}

@@ -46,20 +46,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--weight-decay",
         type=float,
-        default=1e-2,
+        default=0.0,
         help="优化器的权重衰减系数",
     )
     parser.add_argument(
         "--optimizer",
         type=str,
-        default="adamw",
+        default="adam",
         choices=["adamw", "adam", "sgd"],
         help="训练使用的优化器类型",
     )
     parser.add_argument(
         "--scheduler",
         type=str,
-        default="onecycle",
+        default="none",
         choices=["onecycle", "cosine", "none"],
         help="学习率调度策略",
     )
@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-grad-norm",
         type=float,
-        default=1.0,
+        default=None,
         help="梯度裁剪的最大范数，为 0 或负值表示不裁剪",
     )
     parser.add_argument(
@@ -80,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="提前停止的耐心轮数，默认为禁用",
+    )
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        default=0.0,
+        help="若大于 0 将启用参数指数滑动平均 (EMA)，数值推荐 0.99 左右",
     )
     parser.add_argument(
         "--eval-batch-size",
@@ -169,6 +175,7 @@ def main() -> None:
         eval_batch_size=args.eval_batch_size,
         best_model_path=args.best_model_path,
         use_amp=None if not args.disable_amp else False,
+        ema_decay=args.ema_decay,
         device=args.device,
         synthetic_backend=args.synthetic_backend,
         synthetic_device=args.synthetic_device,

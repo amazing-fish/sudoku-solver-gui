@@ -28,7 +28,8 @@ python main.py
 
 - `tqdm` 进度条实时展示训练与验证批次的损失与学习率；
 - 自动混合精度（AMP）会在 CUDA 环境下自动开启，可通过 `--disable-amp` 关闭；
-- AdamW + OneCycleLR 组合优化，同时支持梯度裁剪、标签平滑和提前停止；
+- 默认使用 Adam 优化器，支持梯度裁剪、标签平滑、提前停止，并可通过参数切换为 AdamW + OneCycleLR 等组合；
+- 可选的参数指数滑动平均（EMA）用于平滑权重、提高稳定性；
 - 借助 `torchmetrics` 输出总体准确率、Macro Precision/Recall/F1、Top-3 准确率、各类别准确率以及混淆矩阵；
 - 自动跟踪最佳模型并保存到 `<模型文件名>_best.pt`，最终模型文件亦包含最佳指标、训练历史与完整配置，方便复现与排查。
 
@@ -47,6 +48,7 @@ python main.py \
   --label-smoothing 0.05 \
   --max-grad-norm 1.0 \
   --patience 5 \
+  --ema-decay 0.99 \
   --eval-batch-size 512 \
   --best-model-path models/digit_cnn_best.pt \
   --device cpu  # 或 cuda
