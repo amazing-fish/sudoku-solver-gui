@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from .dataset import SyntheticDigitConfig, SyntheticDigitDataset
 from .model import create_model
+from .utils import format_config, select_device
 
 
 logger = logging.getLogger(__name__)
@@ -92,26 +93,22 @@ def train_model(
 
     torch.manual_seed(42)
 
-    requested_device = device
-    if isinstance(requested_device, torch.device):
-        device_obj = requested_device
-    else:
-        device_str = requested_device or ("cuda" if torch.cuda.is_available() else "cpu")
-        if str(device_str).startswith("cuda") and not torch.cuda.is_available():
-            logger.warning("请求使用 CUDA 设备，但当前环境不可用，自动切换到 CPU。")
-            device_str = "cpu"
-        device_obj = torch.device(device_str)
+    device_obj = select_device(device)
 
     logger.info(
-        "训练参数: epochs=%s, batch_size=%s, learning_rate=%s, device=%s, synthetic_backend=%s, synthetic_device=%s, synthesis_batch=%s, synthetic_progress_interval=%ss",
-        epochs,
-        batch_size,
-        learning_rate,
-        device_obj,
-        synthetic_backend,
-        synthetic_device or "auto",
-        synthetic_batch_size,
-        synthetic_progress_interval,
+        "训练参数: %s",
+        format_config(
+            {
+                "batch_size": batch_size,
+                "device": device_obj,
+                "epochs": epochs,
+                "learning_rate": learning_rate,
+                "synthetic_backend": synthetic_backend,
+                "synthetic_device": synthetic_device or "auto",
+                "synthetic_progress_interval": synthetic_progress_interval,
+                "synthesis_batch": synthetic_batch_size,
+            }
+        ),
     )
 
     train_loader, test_loader = _prepare_dataloaders(

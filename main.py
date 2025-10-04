@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.train import train_model
+from src.utils import format_config
 
 if TYPE_CHECKING:  # pragma: no cover - 仅用于类型检查
     from src.sudoku_infer import format_grid, predict_sudoku
@@ -94,18 +95,22 @@ def main() -> None:
     logger = logging.getLogger(__name__)
 
     logger.info(
-        "命令行参数: model_path=%s, image_path=%s, epochs=%s, batch_size=%s, learning_rate=%s, device=%s, skip_inference=%s, synthetic_backend=%s, synthetic_device=%s, synthetic_batch_size=%s, synthetic_progress_interval=%s",
-        model_path,
-        image_path,
-        args.epochs,
-        args.batch_size,
-        args.learning_rate,
-        args.device,
-        args.skip_inference,
-        args.synthetic_backend,
-        args.synthetic_device,
-        args.synthetic_batch_size,
-        args.synthetic_progress_interval,
+        "命令行参数: %s",
+        format_config(
+            {
+                "batch_size": args.batch_size,
+                "device": args.device or "auto",
+                "epochs": args.epochs,
+                "image_path": image_path,
+                "learning_rate": args.learning_rate,
+                "model_path": model_path,
+                "skip_inference": args.skip_inference,
+                "synthetic_backend": args.synthetic_backend,
+                "synthetic_batch_size": args.synthetic_batch_size,
+                "synthetic_device": args.synthetic_device,
+                "synthetic_progress_interval": args.synthetic_progress_interval,
+            }
+        ),
     )
 
     logger.info("开始训练数字识别模型……")
@@ -116,7 +121,9 @@ def main() -> None:
         learning_rate=args.learning_rate,
         device=args.device,
         synthetic_backend=args.synthetic_backend,
-        synthetic_device=args.synthetic_device,
+        synthetic_device=(
+            args.synthetic_device if args.synthetic_backend == "gpu" else None
+        ),
         synthetic_batch_size=args.synthetic_batch_size,
         synthetic_progress_interval=args.synthetic_progress_interval,
     )

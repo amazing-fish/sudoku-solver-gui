@@ -10,6 +10,7 @@ import torch
 
 from .model import create_model
 from .preprocess import preprocess_cell
+from .utils import format_config, select_device
 
 
 logger = logging.getLogger(__name__)
@@ -45,16 +46,12 @@ def _load_cells(image_path: str | Path) -> List[np.ndarray | None]:
 
 
 def load_model(model_path: str | Path, device: str | torch.device | None = None) -> torch.nn.Module:
-    if isinstance(device, torch.device):
-        device_obj = device
-    else:
-        device_str = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        if str(device_str).startswith("cuda") and not torch.cuda.is_available():
-            logger.warning("推理请求使用 CUDA 设备，但当前环境不可用，自动切换到 CPU。")
-            device_str = "cpu"
-        device_obj = torch.device(device_str)
+    device_obj = select_device(device)
 
-    logger.info("加载模型: %s，目标设备: %s", Path(model_path).resolve(), device_obj)
+    logger.info(
+        "加载模型: %s",
+        format_config({"model_path": Path(model_path).resolve(), "target_device": device_obj}),
+    )
     model = create_model()
     state_dict = torch.load(model_path, map_location=device_obj)
     model.load_state_dict(state_dict)
@@ -69,14 +66,7 @@ def predict_sudoku(
     image_path: str | Path,
     device: str | torch.device | None = None,
 ) -> List[List[int]]:
-    if isinstance(device, torch.device):
-        device_obj = device
-    else:
-        device_str = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        if str(device_str).startswith("cuda") and not torch.cuda.is_available():
-            logger.warning("推理请求使用 CUDA 设备，但当前环境不可用，自动切换到 CPU。")
-            device_str = "cpu"
-        device_obj = torch.device(device_str)
+    device_obj = select_device(device)
 
     logger.info("推理阶段使用设备: %s", device_obj)
     model = load_model(model_path, device_obj)

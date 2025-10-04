@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 from torch.utils.data import Dataset
 
 from .preprocess import PREPROCESS_VERSION, preprocess_cell_batch
+from .utils import format_config, select_device
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class SyntheticDigitDataset(Dataset):
         self.config = config or SyntheticDigitConfig()
         if not _FONT_PATH.exists():
             raise FileNotFoundError(f"未找到字体文件: {_FONT_PATH}")
-        logger.info("加载字体文件: %s", _FONT_PATH)
+        logger.debug("加载字体文件: %s", _FONT_PATH)
 
         backend = self.config.preprocess_backend.lower()
         if backend not in {"cpu", "gpu"}:
@@ -62,41 +63,34 @@ class SyntheticDigitDataset(Dataset):
         if self.config.progress_interval <= 0:
             raise ValueError("progress_interval 必须大于 0")
 
-        device_str = self.config.device
-        if isinstance(device_str, str):
-            device_str = device_str.lower()
-        if device_str == "auto":
-            device_str = "cuda" if (backend == "gpu" and torch.cuda.is_available()) else "cpu"
-
+        resolved_device = select_device(
+            self.config.device,
+            allow_cuda=(backend == "gpu"),
+        )
         self.preprocess_backend = backend
-        self.preprocess_device = torch.device(device_str)
+        self.preprocess_device = resolved_device
 
         if self.preprocess_backend == "gpu" and self.preprocess_device.type != "cuda":
-            if torch.cuda.is_available():
-                logger.info("GPU 预处理需要 CUDA，自动切换到可用设备 cuda:0")
-                self.preprocess_device = torch.device("cuda")
-            else:
-                logger.warning("请求 GPU 预处理但当前环境不支持 CUDA，回退到 CPU 后端")
-                self.preprocess_backend = "cpu"
-                self.preprocess_device = torch.device("cpu")
-
-        if self.preprocess_backend == "gpu" and not torch.cuda.is_available():
-            logger.warning("CUDA 设备不可用，自动回退到 CPU 预处理后端")
+            logger.info("GPU 预处理所需的 CUDA 不可用，自动切换到 CPU 后端。")
             self.preprocess_backend = "cpu"
             self.preprocess_device = torch.device("cpu")
-
-        if self.preprocess_backend == "gpu":
-            logger.info(
-                "预处理后端: GPU, 设备=%s, 批大小=%s", 
-                self.preprocess_device,
-                self.config.synthesis_batch_size,
-            )
-        else:
-            logger.info("预处理后端: CPU, 批大小=%s", self.config.synthesis_batch_size)
 
         # 更新配置以反映实际运行参数，确保缓存键准确
         self.config.preprocess_backend = self.preprocess_backend
         self.config.device = str(self.preprocess_device)
+
+        logger.info(
+            "初始化合成数据集: %s",
+            format_config(
+                {
+                    "backend": self.preprocess_backend,
+                    "device": self.preprocess_device,
+                    "include_blank": self.config.include_blank,
+                    "samples_per_digit": self.config.samples_per_digit,
+                    "synthesis_batch": self.config.synthesis_batch_size,
+                }
+            ),
+        )
 
         metadata = self._build_metadata()
         cache_key = self._build_cache_key(metadata)
@@ -123,18 +117,18 @@ class SyntheticDigitDataset(Dataset):
         progress_step = max(1, total_target // 50)
 
         logger.info(
-            "正在生成合成数据集: 目标样本数=%s, digit种类=%s, 缓存路径=%s",
-            total_target,
-            len(digits),
-            cache_path,
+            "生成合成数据集: %s",
+            format_config(
+                {
+                    "cache_path": cache_path,
+                    "digits": len(digits),
+                    "target_samples": total_target,
+                }
+            ),
         )
 
         start_time = time.perf_counter()
         last_progress = start_time
-        logger.info(
-            "数据合成进度: 0/%s (0.0%%), 耗时=0.0s, 速度=0.0样本/s, 预计剩余=未知",
-            total_target,
-        )
 
         produced = 0
         total_attempts = 0
@@ -142,7 +136,7 @@ class SyntheticDigitDataset(Dataset):
             generated = 0
             digit_attempts = 0
             pending: list[np.ndarray] = []
-            logger.info("开始生成 digit=%s 的样本……", digit)
+            logger.debug("开始生成 digit=%s 的样本……", digit)
             while generated < self.config.samples_per_digit:
                 sample = self._render_cell(digit, rng)
                 pending.append(sample)
@@ -178,7 +172,7 @@ class SyntheticDigitDataset(Dataset):
                     elapsed = now - start_time
                     rate = produced / elapsed if elapsed > 0 else 0.0
                     eta = (total_target - produced) / rate if rate > 0 else float("inf")
-                    logger.info(
+                    logger.debug(
                         "数据合成进度: %s/%s (%.1f%%), 耗时=%.1fs, 速度=%.1f样本/s, 预计剩余=%.1fs, 当前digit尝试=%s, 累计尝试=%s",
                         produced,
                         total_target,
@@ -257,7 +251,7 @@ class SyntheticDigitDataset(Dataset):
 
         mask = blanks if digit == 0 else ~blanks
         if not np.any(mask) and self.preprocess_backend == "gpu":
-            logger.info(
+            logger.debug(
                 "digit=%s 的 GPU 预处理批次未筛出有效样本，回退到 CPU 预处理以避免长时间重试。",
                 digit,
             )
