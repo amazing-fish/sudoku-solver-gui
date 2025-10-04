@@ -165,9 +165,10 @@ def evaluate(
         targets_tensor,
         num_classes=num_classes,
     ).to(torch.float64)
+    true_counts = confusion.sum(dim=0)
     per_class_accuracy = torch.where(
-        confusion.sum(dim=1) > 0,
-        torch.diag(confusion) / confusion.sum(dim=1),
+        true_counts > 0,
+        torch.diag(confusion) / true_counts,
         torch.zeros(num_classes, dtype=torch.float64),
     )
     top3_accuracy = _compute_topk_accuracy(logits_tensor, targets_tensor, k=min(3, num_classes))
@@ -181,7 +182,7 @@ def evaluate(
         "top3_accuracy": float(top3_accuracy),
         "per_class_accuracy": _tensor_to_list(per_class_accuracy),
         "confusion_matrix": confusion.tolist(),
-        "support": _tensor_to_list(confusion.sum(dim=1)),
+        "support": _tensor_to_list(true_counts),
     }
 
 
