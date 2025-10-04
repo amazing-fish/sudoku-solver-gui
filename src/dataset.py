@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 
 _MEAN = 0.1307
 _STD = 0.3081
-_FONT_PATH = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+_FONT_PATH = Path("C:\ProgramData\kingsoft\office6\omath\DejaVuMathTeXGyre.ttf")
 
 
 @dataclass
