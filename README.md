@@ -8,6 +8,8 @@
 pip install -r requirements.txt
 ```
 
+依赖中包含 `tqdm` 与 `torchmetrics`，分别用于训练进度展示与高级评估指标的统计。
+
 ### 字体资源
 
 训练与推理默认使用金山 WPS 中的 `DejaVuMathTeXGyre.ttf` 字体，路径为 `C:\ProgramData\kingsoft\office6\omath\DejaVuMathTeXGyre.ttf`。如需使用其他字体，可通过环境变量 `SUDOKU_FONT_PATH` 指定绝对路径。
@@ -22,7 +24,15 @@ python main.py
 ```
 
 训练与推理阶段会输出详细的 INFO 日志，包括命令行参数、实际使用的计算设备、合成数据集的生成/缓存进度以及推理填充的数字数量，便于排查“选择了 CUDA 但实际运行在 CPU”等问题。
-默认会训练 3 个周期，每次运行都会重新训练并在终端打印识别出来的数独棋盘内容。如果需要自定义训练与推理参数，可以使用以下可选参数：
+默认会训练 3 个周期，每次运行都会重新训练并在终端打印识别出来的数独棋盘内容。训练阶段默认启用以下增强能力：
+
+- `tqdm` 进度条实时展示训练与验证批次的损失与学习率；
+- 自动混合精度（AMP）会在 CUDA 环境下自动开启，可通过 `--disable-amp` 关闭；
+- AdamW + OneCycleLR 组合优化，同时支持梯度裁剪、标签平滑和提前停止；
+- 借助 `torchmetrics` 输出总体准确率、Macro Precision/Recall/F1、Top-3 准确率、各类别准确率以及混淆矩阵；
+- 自动跟踪最佳模型并保存到 `<模型文件名>_best.pt`，最终模型文件亦包含最佳指标、训练历史与完整配置，方便复现与排查。
+
+如需更细粒度地控制训练过程，可使用以下参数（仅列出新增项，原有参数同样适用）：
 
 ```bash
 python main.py \
@@ -31,14 +41,28 @@ python main.py \
   --epochs 5 \
   --batch-size 256 \
   --learning-rate 5e-4 \
+  --weight-decay 1e-2 \
+  --optimizer adamw \
+  --scheduler onecycle \
+  --label-smoothing 0.05 \
+  --max-grad-norm 1.0 \
+  --patience 5 \
+  --eval-batch-size 512 \
+  --best-model-path models/digit_cnn_best.pt \
   --device cpu  # 或 cuda
   --synthetic-backend gpu \
   --synthetic-device cuda:0 \
   --synthetic-batch-size 512 \
-  --synthetic-progress-interval 1.0
+  --synthetic-progress-interval 1.0 \
+  --disable-amp
 ```
 
-若仅希望训练模型而暂时不进行数独识别，可添加 `--skip-inference` 参数。
+若仅希望训练模型而暂时不进行数独识别，可添加 `--skip-inference` 参数。训练完成后保存的模型文件会包含：
+
+- `model_state`: 最佳模型的权重；
+- `metrics`: 最佳验证指标（含 Macro Precision/Recall/F1、Top-3、各类别准确率、混淆矩阵等）；
+- `history`: 每个 epoch 的训练/验证损失与准确率曲线；
+- `config`: 完整训练配置，便于复现实验。
 
 ## 训练与预处理一致性
 

@@ -44,6 +44,61 @@ def parse_args() -> argparse.Namespace:
         help="训练使用的学习率",
     )
     parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=1e-2,
+        help="优化器的权重衰减系数",
+    )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="adamw",
+        choices=["adamw", "adam", "sgd"],
+        help="训练使用的优化器类型",
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="onecycle",
+        choices=["onecycle", "cosine", "none"],
+        help="学习率调度策略",
+    )
+    parser.add_argument(
+        "--label-smoothing",
+        type=float,
+        default=0.0,
+        help="交叉熵损失的标签平滑系数",
+    )
+    parser.add_argument(
+        "--max-grad-norm",
+        type=float,
+        default=1.0,
+        help="梯度裁剪的最大范数，为 0 或负值表示不裁剪",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=None,
+        help="提前停止的耐心轮数，默认为禁用",
+    )
+    parser.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=None,
+        help="验证阶段使用的批大小，默认为与训练一致",
+    )
+    parser.add_argument(
+        "--best-model-path",
+        type=Path,
+        default=None,
+        help="最佳模型权重的保存路径，默认为在模型文件名后追加 _best",
+    )
+    parser.add_argument(
+        "--disable-amp",
+        action="store_true",
+        help="禁用 CUDA 自动混合精度训练",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,
@@ -93,20 +148,11 @@ def main() -> None:
     )
     logger = logging.getLogger(__name__)
 
-    logger.info(
-        "命令行参数: model_path=%s, image_path=%s, epochs=%s, batch_size=%s, learning_rate=%s, device=%s, skip_inference=%s, synthetic_backend=%s, synthetic_device=%s, synthetic_batch_size=%s, synthetic_progress_interval=%s",
-        model_path,
-        image_path,
-        args.epochs,
-        args.batch_size,
-        args.learning_rate,
-        args.device,
-        args.skip_inference,
-        args.synthetic_backend,
-        args.synthetic_device,
-        args.synthetic_batch_size,
-        args.synthetic_progress_interval,
-    )
+    arg_summary = {
+        key: (str(value) if isinstance(value, Path) else value)
+        for key, value in vars(args).items()
+    }
+    logger.info("命令行参数: %s", arg_summary)
 
     logger.info("开始训练数字识别模型……")
     train_model(
@@ -114,6 +160,15 @@ def main() -> None:
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        optimizer_name=args.optimizer,
+        scheduler=None if args.scheduler == "none" else args.scheduler,
+        label_smoothing=args.label_smoothing,
+        max_grad_norm=args.max_grad_norm,
+        patience=args.patience,
+        eval_batch_size=args.eval_batch_size,
+        best_model_path=args.best_model_path,
+        use_amp=None if not args.disable_amp else False,
         device=args.device,
         synthetic_backend=args.synthetic_backend,
         synthetic_device=args.synthetic_device,
