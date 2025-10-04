@@ -16,12 +16,52 @@ from .dataset import SyntheticDigitConfig, SyntheticDigitDataset
 from .model import create_model
 
 
-def _prepare_dataloaders(batch_size: int) -> tuple[DataLoader, DataLoader]:
-    train_dataset = SyntheticDigitDataset(SyntheticDigitConfig(samples_per_digit=500, seed=1))
-    test_dataset = SyntheticDigitDataset(SyntheticDigitConfig(samples_per_digit=100, seed=2023))
+logger = logging.getLogger(__name__)
+
+
+def _prepare_dataloaders(
+    batch_size: int,
+    *,
+    preprocess_backend: str = "cpu",
+    preprocess_device: str | None = None,
+    synthesis_batch_size: int = 256,
+    progress_interval: float = 2.0,
+) -> tuple[DataLoader, DataLoader]:
+    device = preprocess_device or "auto"
+    train_config = SyntheticDigitConfig(
+        samples_per_digit=500,
+        seed=1,
+        preprocess_backend=preprocess_backend,
+        device=device,
+        synthesis_batch_size=synthesis_batch_size,
+        progress_interval=progress_interval,
+    )
+    test_config = SyntheticDigitConfig(
+        samples_per_digit=100,
+        seed=2023,
+        preprocess_backend=preprocess_backend,
+        device=device,
+        synthesis_batch_size=synthesis_batch_size,
+        progress_interval=progress_interval,
+    )
+    logger.info(
+        "构建数据集: train_samples_per_digit=%s, test_samples_per_digit=%s, 包含空白=%s",
+        train_config.samples_per_digit,
+        test_config.samples_per_digit,
+        train_config.include_blank,
+    )
+    train_dataset = SyntheticDigitDataset(train_config)
+    test_dataset = SyntheticDigitDataset(test_config)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    logger.info(
+        "数据加载完成: train_size=%s, test_size=%s, batch_size=%s, 合成预处理后端=%s",
+        len(train_dataset),
+        len(test_dataset),
+        batch_size,
+        preprocess_backend,
+    )
     return train_loader, test_loader
 
 
@@ -203,8 +243,8 @@ def train_model(
         total_samples = 0
 
         for images, labels in train_loader:
-            images = images.to(device)
-            labels = labels.to(device)
+            images = images.to(device_obj)
+            labels = labels.to(device_obj)
 
             optimizer.zero_grad(set_to_none=True)
 

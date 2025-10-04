@@ -2,41 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import List
+import logging
 
 import cv2
 import numpy as np
 import torch
 
 from .model import create_model
-
-_MEAN = 0.1307
-_STD = 0.3081
+from .preprocess import preprocess_cell
 
 
-def _preprocess_cell(cell: np.ndarray) -> np.ndarray | None:
-    """Convert a raw Sudoku cell to a normalized tensor-ready array."""
-
-    blur = cv2.GaussianBlur(cell, (3, 3), 0)
-    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-    if cv2.countNonZero(thresh) < 50:
-        return None
-
-    coords = cv2.findNonZero(thresh)
-    x, y, w, h = cv2.boundingRect(coords)
-    digit = thresh[y : y + h, x : x + w]
-    side = max(w, h)
-    padded = np.zeros((side, side), dtype=np.uint8)
-    x_offset = (side - w) // 2
-    y_offset = (side - h) // 2
-    padded[y_offset : y_offset + h, x_offset : x_offset + w] = digit
-    resized = cv2.resize(padded, (28, 28), interpolation=cv2.INTER_AREA)
-    normalized = resized.astype(np.float32) / 255.0
-    normalized = (normalized - _MEAN) / _STD
-    return normalized
+logger = logging.getLogger(__name__)
 
 
 def _load_cells(image_path: str | Path) -> List[np.ndarray | None]:
+    logger.info("加载数独图片: %s", Path(image_path).resolve())
     image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
     if image is None:
         raise FileNotFoundError(f"无法加载图片: {image_path}")
@@ -58,18 +38,29 @@ def _load_cells(image_path: str | Path) -> List[np.ndarray | None]:
             if cell.size == 0:
                 cells.append(None)
                 continue
-            processed = _preprocess_cell(cell)
-            cells.append(processed)
+            result = preprocess_cell(cell)
+            cells.append(None if result.is_blank else result.data)
+    logger.info("完成单元格切分，总单元格数量: %s，检测到待预测单元格: %s", len(cells), sum(cell is not None for cell in cells))
     return cells
 
 
 def load_model(model_path: str | Path, device: str | torch.device | None = None) -> torch.nn.Module:
-    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    if isinstance(device, torch.device):
+        device_obj = device
+    else:
+        device_str = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if str(device_str).startswith("cuda") and not torch.cuda.is_available():
+            logger.warning("推理请求使用 CUDA 设备，但当前环境不可用，自动切换到 CPU。")
+            device_str = "cpu"
+        device_obj = torch.device(device_str)
+
+    logger.info("加载模型: %s，目标设备: %s", Path(model_path).resolve(), device_obj)
     model = create_model()
-    state_dict = torch.load(model_path, map_location=device)
+    state_dict = torch.load(model_path, map_location=device_obj)
     model.load_state_dict(state_dict)
-    model.to(device)
+    model.to(device_obj)
     model.eval()
+    logger.info("模型加载完成，进入评估模式。")
     return model
 
 
@@ -78,8 +69,17 @@ def predict_sudoku(
     image_path: str | Path,
     device: str | torch.device | None = None,
 ) -> List[List[int]]:
-    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    model = load_model(model_path, device)
+    if isinstance(device, torch.device):
+        device_obj = device
+    else:
+        device_str = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if str(device_str).startswith("cuda") and not torch.cuda.is_available():
+            logger.warning("推理请求使用 CUDA 设备，但当前环境不可用，自动切换到 CPU。")
+            device_str = "cpu"
+        device_obj = torch.device(device_str)
+
+    logger.info("推理阶段使用设备: %s", device_obj)
+    model = load_model(model_path, device_obj)
     cells = _load_cells(image_path)
 
     sudoku_grid: List[List[int]] = [[0 for _ in range(9)] for _ in range(9)]
@@ -97,12 +97,13 @@ def predict_sudoku(
 
     if digit_batches:
         inputs = np.stack(digit_batches)
-        inputs = torch.from_numpy(inputs).unsqueeze(1).to(device)
+        inputs = torch.from_numpy(inputs).unsqueeze(1).to(device_obj)
         with torch.no_grad():
             outputs = model(inputs)
             predictions = outputs.argmax(dim=1).cpu().numpy()
         for (row, col), value in zip(positions, predictions):
             sudoku_grid[row][col] = int(value)
+        logger.info("推理完成，填充数字数量: %s", len(positions))
 
     return sudoku_grid
 
