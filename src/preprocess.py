@@ -110,8 +110,9 @@ def _gaussian_kernel(size: int, sigma: float, device: torch.device) -> torch.Ten
 
 def _local_contrast_enhance(tensor: torch.Tensor) -> torch.Tensor:
     # 近似 CLAHE 的局部对比度增强，结果限制在 [0, 1]
-    max_pool = F.max_pool2d(tensor, kernel_size=8, stride=1, padding=3)
-    min_pool = -F.max_pool2d(-tensor, kernel_size=8, stride=1, padding=3)
+    # 使用奇数核保证与输入张量保持一致的空间尺寸，避免广播失败
+    max_pool = F.max_pool2d(tensor, kernel_size=9, stride=1, padding=4)
+    min_pool = -F.max_pool2d(-tensor, kernel_size=9, stride=1, padding=4)
     enhanced = (tensor - min_pool)
     denom = (max_pool - min_pool).clamp_min(1e-3)
     enhanced = enhanced / denom
