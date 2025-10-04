@@ -243,28 +243,38 @@ class SyntheticDigitDataset(Dataset):
             return 0
 
         batch = np.stack(pending, axis=0)
-        if self.preprocess_backend == "gpu":
-            data, blanks = preprocess_cell_batch(
-                batch,
-                backend="gpu",
-                device=self.preprocess_device,
+
+        def _run_preprocess(current_backend: str) -> tuple[np.ndarray, np.ndarray]:
+            if current_backend == "gpu":
+                return preprocess_cell_batch(
+                    batch,
+                    backend="gpu",
+                    device=self.preprocess_device,
+                )
+            return preprocess_cell_batch(batch, backend="cpu")
+
+        data, blanks = _run_preprocess(self.preprocess_backend)
+
+        mask = blanks if digit == 0 else ~blanks
+        if not np.any(mask) and self.preprocess_backend == "gpu":
+            logger.info(
+                "digit=%s 的 GPU 预处理批次未筛出有效样本，回退到 CPU 预处理以避免长时间重试。",
+                digit,
             )
-        else:
-            data, blanks = preprocess_cell_batch(batch, backend="cpu")
+            data, blanks = _run_preprocess("cpu")
+            mask = blanks if digit == 0 else ~blanks
 
-        accepted = 0
-        for datum, is_blank in zip(data, blanks):
-            if digit == 0 and not is_blank:
-                continue
-            if digit != 0 and is_blank:
-                continue
+        if not np.any(mask):
+            pending.clear()
+            return 0
 
-            tensor = torch.from_numpy(datum).unsqueeze(0)
+        selected_indices = np.flatnonzero(mask)[:remaining]
+        for idx in selected_indices:
+            tensor = torch.from_numpy(data[idx]).unsqueeze(0)
             images.append(tensor)
             labels.append(digit)
-            accepted += 1
-            if accepted >= remaining:
-                break
+
+        accepted = len(selected_indices)
 
         pending.clear()
         return accepted
