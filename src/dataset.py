@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import hashlib
 import logging
 import os
 from pathlib import Path
+import json
 from typing import Tuple
 
 import numpy as np
@@ -11,7 +13,7 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 from torch.utils.data import Dataset
 
-from .preprocess import preprocess_cell
+from .preprocess import PREPROCESS_VERSION, preprocess_cell
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,9 @@ class SyntheticDigitConfig:
     seed: int = 42
 
 
+_CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
+
+
 class SyntheticDigitDataset(Dataset):
     """Generate synthetic digit images similar to the Sudoku font."""
 
@@ -44,30 +49,66 @@ class SyntheticDigitDataset(Dataset):
             raise FileNotFoundError(f"未找到字体文件: {_FONT_PATH}")
         logger.info("加载字体文件: %s", _FONT_PATH)
 
-        rng = np.random.default_rng(self.config.seed)
-        self.images: list[torch.Tensor] = []
-        self.labels: list[int] = []
+        metadata = self._build_metadata()
+        cache_key = self._build_cache_key(metadata)
+        cache_path = _CACHE_DIR / f"synthetic_digits_{cache_key}.pt"
+        if cache_path.exists():
+            payload = torch.load(cache_path, map_location="cpu")
+            self.images = payload["images"]
+            self.labels = payload["labels"]
+            logger.info(
+                "从缓存加载合成数据集: 文件=%s, 样本数=%s",
+                cache_path,
+                self.labels.numel(),
+            )
+            return
 
+        rng = np.random.default_rng(self.config.seed)
         digits = list(range(1, 10))
         if self.config.include_blank:
             digits = [0] + digits
 
+        images: list[torch.Tensor] = []
+        labels: list[int] = []
+        total_target = self.config.samples_per_digit * len(digits)
+        progress_step = max(1, total_target // 20)
+
+        logger.info(
+            "正在生成合成数据集: 目标样本数=%s, digit种类=%s, 缓存路径=%s",
+            total_target,
+            len(digits),
+            cache_path,
+        )
+
+        produced = 0
         for digit in digits:
             generated = 0
             while generated < self.config.samples_per_digit:
                 tensor = self._create_sample(digit, rng)
                 if tensor is None:
                     continue
-                self.images.append(tensor)
-                self.labels.append(digit)
+                images.append(tensor)
+                labels.append(digit)
                 generated += 1
+                produced += 1
+                if produced % progress_step == 0 or produced == total_target:
+                    percent = produced / total_target * 100
+                    logger.info(
+                        "数据合成进度: %s/%s (%.1f%%)",
+                        produced,
+                        total_target,
+                        percent,
+                    )
 
-        logger.info(
-            "合成数据集准备完成: 总样本数=%s, 类别数=%s, 包含空白=%s",
-            len(self.labels),
-            len(set(self.labels)),
-            self.config.include_blank,
+        self.images = torch.stack(images, dim=0)
+        self.labels = torch.tensor(labels, dtype=torch.long)
+
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {"images": self.images, "labels": self.labels, "metadata": metadata},
+            cache_path,
         )
+        logger.info("合成数据集准备完成并已缓存: 样本数=%s", self.labels.numel())
 
     def _create_sample(
         self, digit: int, rng: np.random.Generator
@@ -121,7 +162,27 @@ class SyntheticDigitDataset(Dataset):
         return array.astype(np.uint8)
 
     def __len__(self) -> int:  # type: ignore[override]
-        return len(self.labels)
+        return int(self.labels.numel())
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:  # type: ignore[override]
-        return self.images[index], self.labels[index]
+        image = self.images[index]
+        label = self.labels[index]
+        if isinstance(label, torch.Tensor):
+            label = int(label.item())
+        return image, label
+
+    def _build_metadata(self) -> dict[str, object]:
+        config_dict = asdict(self.config)
+        config_dict["angle_range"] = list(config_dict["angle_range"])
+        font_stat = _FONT_PATH.stat()
+        return {
+            "config": config_dict,
+            "font_path": str(_FONT_PATH.resolve()),
+            "font_mtime": font_stat.st_mtime,
+            "font_size": font_stat.st_size,
+            "preprocess_version": PREPROCESS_VERSION,
+        }
+
+    def _build_cache_key(self, metadata: dict[str, object]) -> str:
+        serialized = json.dumps(metadata, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha1(serialized.encode("utf-8")).hexdigest()

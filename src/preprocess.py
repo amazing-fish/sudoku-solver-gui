@@ -8,12 +8,14 @@ import numpy as np
 __all__ = [
     "PREPROCESS_MEAN",
     "PREPROCESS_STD",
+    "PREPROCESS_VERSION",
     "PreprocessResult",
     "preprocess_cell",
 ]
 
 PREPROCESS_MEAN: float = 0.1307
 PREPROCESS_STD: float = 0.3081
+PREPROCESS_VERSION: str = "20241004"
 _TARGET_SIZE: int = 28
 
 
