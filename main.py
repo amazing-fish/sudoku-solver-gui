@@ -54,6 +54,31 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="仅训练模型而跳过数独识别",
     )
+    parser.add_argument(
+        "--synthetic-backend",
+        type=str,
+        default="cpu",
+        choices=["cpu", "gpu"],
+        help="合成数据预处理后端，可选 cpu 或 gpu",
+    )
+    parser.add_argument(
+        "--synthetic-device",
+        type=str,
+        default="auto",
+        help="GPU 预处理设备标识，默认为 auto 自动选择",
+    )
+    parser.add_argument(
+        "--synthetic-batch-size",
+        type=int,
+        default=256,
+        help="合成数据预处理批大小",
+    )
+    parser.add_argument(
+        "--synthetic-progress-interval",
+        type=float,
+        default=2.0,
+        help="合成数据进度日志的时间间隔（秒）",
+    )
     return parser.parse_args()
 
 
@@ -69,7 +94,7 @@ def main() -> None:
     logger = logging.getLogger(__name__)
 
     logger.info(
-        "命令行参数: model_path=%s, image_path=%s, epochs=%s, batch_size=%s, learning_rate=%s, device=%s, skip_inference=%s",
+        "命令行参数: model_path=%s, image_path=%s, epochs=%s, batch_size=%s, learning_rate=%s, device=%s, skip_inference=%s, synthetic_backend=%s, synthetic_device=%s, synthetic_batch_size=%s, synthetic_progress_interval=%s",
         model_path,
         image_path,
         args.epochs,
@@ -77,6 +102,10 @@ def main() -> None:
         args.learning_rate,
         args.device,
         args.skip_inference,
+        args.synthetic_backend,
+        args.synthetic_device,
+        args.synthetic_batch_size,
+        args.synthetic_progress_interval,
     )
 
     logger.info("开始训练数字识别模型……")
@@ -86,6 +115,10 @@ def main() -> None:
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         device=args.device,
+        synthetic_backend=args.synthetic_backend,
+        synthetic_device=args.synthetic_device,
+        synthetic_batch_size=args.synthetic_batch_size,
+        synthetic_progress_interval=args.synthetic_progress_interval,
     )
 
     if args.skip_inference:

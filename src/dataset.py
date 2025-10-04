@@ -14,7 +14,7 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 from torch.utils.data import Dataset
 
-from .preprocess import PREPROCESS_VERSION, preprocess_cell
+from .preprocess import PREPROCESS_VERSION, preprocess_cell_batch
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,11 @@ class SyntheticDigitConfig:
     angle_range: Tuple[float, float] = (-12, 12)
     noise_std: float = 12.0
     jitter_ratio: float = 0.12
-    max_attempts: int = 6
     seed: int = 42
+    preprocess_backend: str = "cpu"
+    device: str = "auto"
+    synthesis_batch_size: int = 256
+    progress_interval: float = 2.0
 
 
 _CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
@@ -49,6 +52,51 @@ class SyntheticDigitDataset(Dataset):
         if not _FONT_PATH.exists():
             raise FileNotFoundError(f"未找到字体文件: {_FONT_PATH}")
         logger.info("加载字体文件: %s", _FONT_PATH)
+
+        backend = self.config.preprocess_backend.lower()
+        if backend not in {"cpu", "gpu"}:
+            raise ValueError(f"不支持的预处理后端: {backend}")
+
+        if self.config.synthesis_batch_size <= 0:
+            raise ValueError("synthesis_batch_size 必须为正整数")
+        if self.config.progress_interval <= 0:
+            raise ValueError("progress_interval 必须大于 0")
+
+        device_str = self.config.device
+        if isinstance(device_str, str):
+            device_str = device_str.lower()
+        if device_str == "auto":
+            device_str = "cuda" if (backend == "gpu" and torch.cuda.is_available()) else "cpu"
+
+        self.preprocess_backend = backend
+        self.preprocess_device = torch.device(device_str)
+
+        if self.preprocess_backend == "gpu" and self.preprocess_device.type != "cuda":
+            if torch.cuda.is_available():
+                logger.info("GPU 预处理需要 CUDA，自动切换到可用设备 cuda:0")
+                self.preprocess_device = torch.device("cuda")
+            else:
+                logger.warning("请求 GPU 预处理但当前环境不支持 CUDA，回退到 CPU 后端")
+                self.preprocess_backend = "cpu"
+                self.preprocess_device = torch.device("cpu")
+
+        if self.preprocess_backend == "gpu" and not torch.cuda.is_available():
+            logger.warning("CUDA 设备不可用，自动回退到 CPU 预处理后端")
+            self.preprocess_backend = "cpu"
+            self.preprocess_device = torch.device("cpu")
+
+        if self.preprocess_backend == "gpu":
+            logger.info(
+                "预处理后端: GPU, 设备=%s, 批大小=%s", 
+                self.preprocess_device,
+                self.config.synthesis_batch_size,
+            )
+        else:
+            logger.info("预处理后端: CPU, 批大小=%s", self.config.synthesis_batch_size)
+
+        # 更新配置以反映实际运行参数，确保缓存键准确
+        self.config.preprocess_backend = self.preprocess_backend
+        self.config.device = str(self.preprocess_device)
 
         metadata = self._build_metadata()
         cache_key = self._build_cache_key(metadata)
@@ -82,36 +130,89 @@ class SyntheticDigitDataset(Dataset):
         )
 
         start_time = time.perf_counter()
+        last_progress = start_time
         logger.info(
             "数据合成进度: 0/%s (0.0%%), 耗时=0.0s, 速度=0.0样本/s, 预计剩余=未知",
             total_target,
         )
 
         produced = 0
+        total_attempts = 0
         for digit in digits:
             generated = 0
+            digit_attempts = 0
+            pending: list[np.ndarray] = []
+            logger.info("开始生成 digit=%s 的样本……", digit)
             while generated < self.config.samples_per_digit:
-                tensor = self._create_sample(digit, rng)
-                if tensor is None:
-                    continue
-                images.append(tensor)
-                labels.append(digit)
-                generated += 1
-                produced += 1
-                if produced % progress_step == 0 or produced == total_target:
-                    percent = produced / total_target * 100
-                    elapsed = time.perf_counter() - start_time
+                sample = self._render_cell(digit, rng)
+                pending.append(sample)
+                total_attempts += 1
+                digit_attempts += 1
+
+                if (
+                    len(pending) >= self.config.synthesis_batch_size
+                    or digit_attempts % self.config.synthesis_batch_size == 0
+                ):
+                    accepted = self._process_pending(
+                        pending,
+                        digit,
+                        self.config.samples_per_digit - generated,
+                        images,
+                        labels,
+                    )
+                    generated += accepted
+                    produced += accepted
+                    pending.clear()
+
+                now = time.perf_counter()
+                should_log = False
+                if produced > 0 and (
+                    produced % progress_step == 0 or produced == total_target
+                ):
+                    should_log = True
+                if now - last_progress >= self.config.progress_interval:
+                    should_log = True
+
+                if should_log:
+                    percent = produced / total_target * 100 if total_target else 0.0
+                    elapsed = now - start_time
                     rate = produced / elapsed if elapsed > 0 else 0.0
                     eta = (total_target - produced) / rate if rate > 0 else float("inf")
                     logger.info(
-                        "数据合成进度: %s/%s (%.1f%%), 耗时=%.1fs, 速度=%.1f样本/s, 预计剩余=%.1fs",
+                        "数据合成进度: %s/%s (%.1f%%), 耗时=%.1fs, 速度=%.1f样本/s, 预计剩余=%.1fs, 当前digit尝试=%s, 累计尝试=%s",
                         produced,
                         total_target,
                         percent,
                         elapsed,
                         rate,
                         eta,
+                        digit_attempts,
+                        total_attempts,
                     )
+                    last_progress = now
+
+            if pending:
+                accepted = self._process_pending(
+                    pending,
+                    digit,
+                    self.config.samples_per_digit - generated,
+                    images,
+                    labels,
+                )
+                generated += accepted
+                produced += accepted
+                pending.clear()
+
+            if generated < self.config.samples_per_digit:
+                logger.warning(
+                    "digit=%s 的样本生成不足，期望=%s，实际=%s，请检查预处理阈值。",
+                    digit,
+                    self.config.samples_per_digit,
+                    generated,
+                )
+
+        if not images:
+            raise RuntimeError("未能生成任何合成样本，请检查预处理参数设置。")
 
         self.images = torch.stack(images, dim=0)
         self.labels = torch.tensor(labels, dtype=torch.long)
@@ -129,24 +230,44 @@ class SyntheticDigitDataset(Dataset):
             self.labels.numel() / total_elapsed if total_elapsed > 0 else 0.0,
         )
 
-    def _create_sample(
-        self, digit: int, rng: np.random.Generator
-    ) -> torch.Tensor | None:
-        for _ in range(self.config.max_attempts):
-            cell = self._render_cell(digit, rng)
-            result = preprocess_cell(cell)
+    def _process_pending(
+        self,
+        pending: list[np.ndarray],
+        digit: int,
+        remaining: int,
+        images: list[torch.Tensor],
+        labels: list[int],
+    ) -> int:
+        if not pending or remaining <= 0:
+            pending.clear()
+            return 0
 
-            if digit == 0:
-                if not result.is_blank:
-                    continue
-            else:
-                if result.is_blank:
-                    continue
+        batch = np.stack(pending, axis=0)
+        if self.preprocess_backend == "gpu":
+            data, blanks = preprocess_cell_batch(
+                batch,
+                backend="gpu",
+                device=self.preprocess_device,
+            )
+        else:
+            data, blanks = preprocess_cell_batch(batch, backend="cpu")
 
-            tensor = torch.from_numpy(result.data).unsqueeze(0)
-            return tensor
+        accepted = 0
+        for datum, is_blank in zip(data, blanks):
+            if digit == 0 and not is_blank:
+                continue
+            if digit != 0 and is_blank:
+                continue
 
-        return None
+            tensor = torch.from_numpy(datum).unsqueeze(0)
+            images.append(tensor)
+            labels.append(digit)
+            accepted += 1
+            if accepted >= remaining:
+                break
+
+        pending.clear()
+        return accepted
 
     def _render_cell(self, digit: int, rng: np.random.Generator) -> np.ndarray:
         cell_size = self.config.cell_size
@@ -174,7 +295,7 @@ class SyntheticDigitDataset(Dataset):
         image = image.rotate(angle, resample=Image.BILINEAR, fillcolor=255)
 
         array = np.array(image, dtype=np.float32)
-        if self.config.noise_std > 0:
+        if digit != 0 and self.config.noise_std > 0:
             noise = rng.normal(loc=0.0, scale=self.config.noise_std, size=array.shape)
             array = np.clip(array + noise, 0.0, 255.0)
 

@@ -15,9 +15,31 @@ from .model import create_model
 logger = logging.getLogger(__name__)
 
 
-def _prepare_dataloaders(batch_size: int) -> tuple[DataLoader, DataLoader]:
-    train_config = SyntheticDigitConfig(samples_per_digit=500, seed=1)
-    test_config = SyntheticDigitConfig(samples_per_digit=100, seed=2023)
+def _prepare_dataloaders(
+    batch_size: int,
+    *,
+    preprocess_backend: str = "cpu",
+    preprocess_device: str | None = None,
+    synthesis_batch_size: int = 256,
+    progress_interval: float = 2.0,
+) -> tuple[DataLoader, DataLoader]:
+    device = preprocess_device or "auto"
+    train_config = SyntheticDigitConfig(
+        samples_per_digit=500,
+        seed=1,
+        preprocess_backend=preprocess_backend,
+        device=device,
+        synthesis_batch_size=synthesis_batch_size,
+        progress_interval=progress_interval,
+    )
+    test_config = SyntheticDigitConfig(
+        samples_per_digit=100,
+        seed=2023,
+        preprocess_backend=preprocess_backend,
+        device=device,
+        synthesis_batch_size=synthesis_batch_size,
+        progress_interval=progress_interval,
+    )
     logger.info(
         "构建数据集: train_samples_per_digit=%s, test_samples_per_digit=%s, 包含空白=%s",
         train_config.samples_per_digit,
@@ -30,10 +52,11 @@ def _prepare_dataloaders(batch_size: int) -> tuple[DataLoader, DataLoader]:
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     logger.info(
-        "数据加载完成: train_size=%s, test_size=%s, batch_size=%s",
+        "数据加载完成: train_size=%s, test_size=%s, batch_size=%s, 合成预处理后端=%s",
         len(train_dataset),
         len(test_dataset),
         batch_size,
+        preprocess_backend,
     )
     return train_loader, test_loader
 
@@ -59,6 +82,11 @@ def train_model(
     batch_size: int = 128,
     learning_rate: float = 1e-3,
     device: str | torch.device | None = None,
+    *,
+    synthetic_backend: str = "cpu",
+    synthetic_device: str | None = None,
+    synthetic_batch_size: int = 256,
+    synthetic_progress_interval: float = 2.0,
 ) -> nn.Module:
     """Train the digit classifier on synthetic data and save the model."""
 
@@ -75,14 +103,24 @@ def train_model(
         device_obj = torch.device(device_str)
 
     logger.info(
-        "训练参数: epochs=%s, batch_size=%s, learning_rate=%s, device=%s",
+        "训练参数: epochs=%s, batch_size=%s, learning_rate=%s, device=%s, synthetic_backend=%s, synthetic_device=%s, synthesis_batch=%s, synthetic_progress_interval=%ss",
         epochs,
         batch_size,
         learning_rate,
         device_obj,
+        synthetic_backend,
+        synthetic_device or "auto",
+        synthetic_batch_size,
+        synthetic_progress_interval,
     )
 
-    train_loader, test_loader = _prepare_dataloaders(batch_size)
+    train_loader, test_loader = _prepare_dataloaders(
+        batch_size,
+        preprocess_backend=synthetic_backend,
+        preprocess_device=synthetic_device or "auto",
+        synthesis_batch_size=synthetic_batch_size,
+        progress_interval=synthetic_progress_interval,
+    )
 
     model = create_model().to(device_obj)
     total_params = sum(p.numel() for p in model.parameters())
