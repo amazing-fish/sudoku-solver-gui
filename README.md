@@ -8,6 +8,10 @@
 pip install -r requirements.txt
 ```
 
+### 字体资源
+
+训练与推理默认使用金山 WPS 中的 `DejaVuMathTeXGyre.ttf` 字体，路径为 `C:\ProgramData\kingsoft\office6\omath\DejaVuMathTeXGyre.ttf`。如需使用其他字体，可通过环境变量 `SUDOKU_FONT_PATH` 指定绝对路径。
+
 ## 运行
 
 运行前请准备好待识别的数独图片（PNG 格式）。默认路径为 `data/puzzle.png`，可参考 `data/README.md` 了解图片准备要求。
@@ -17,6 +21,8 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
+
+训练与推理阶段会输出详细的 INFO 日志，包括命令行参数、实际使用的计算设备、数据集构建细节以及推理填充的数字数量，便于排查“选择了 CUDA 但实际运行在 CPU”等问题。
 
 默认会训练 3 个周期，每次运行都会重新训练并在终端打印识别出来的数独棋盘内容。如果需要自定义训练与推理参数，可以使用以下可选参数：
 

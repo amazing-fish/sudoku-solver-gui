@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import os
 from pathlib import Path
 from typing import Tuple
 
@@ -11,7 +13,14 @@ from torch.utils.data import Dataset
 
 from .preprocess import preprocess_cell
 
-_FONT_PATH = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+logger = logging.getLogger(__name__)
+
+_FONT_PATH = Path(
+    os.environ.get(
+        "SUDOKU_FONT_PATH",
+        r"C:\\ProgramData\\kingsoft\\office6\\omath\\DejaVuMathTeXGyre.ttf",
+    )
+)
 
 
 @dataclass
@@ -33,6 +42,7 @@ class SyntheticDigitDataset(Dataset):
         self.config = config or SyntheticDigitConfig()
         if not _FONT_PATH.exists():
             raise FileNotFoundError(f"未找到字体文件: {_FONT_PATH}")
+        logger.info("加载字体文件: %s", _FONT_PATH)
 
         rng = np.random.default_rng(self.config.seed)
         self.images: list[torch.Tensor] = []
@@ -51,6 +61,13 @@ class SyntheticDigitDataset(Dataset):
                 self.images.append(tensor)
                 self.labels.append(digit)
                 generated += 1
+
+        logger.info(
+            "合成数据集准备完成: 总样本数=%s, 类别数=%s, 包含空白=%s",
+            len(self.labels),
+            len(set(self.labels)),
+            self.config.include_blank,
+        )
 
     def _create_sample(
         self, digit: int, rng: np.random.Generator
