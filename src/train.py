@@ -413,20 +413,21 @@ def train_model(
         "amp_enabled": amp_enabled,
     }
 
-    for epoch in range(epochs):
+    epoch_progress = tqdm(
+        range(1, epochs + 1),
+        desc="训练进度",
+        dynamic_ncols=True,
+        leave=False,
+    )
+    for epoch in epoch_progress:
         model.train()
         running_loss = 0.0
         train_correct = 0
         train_top3_correct = 0
         seen_samples = 0
+        current_lr = optimizer.param_groups[0]["lr"]
 
-        train_progress = tqdm(
-            train_loader,
-            desc=f"训练 Epoch {epoch + 1}/{epochs}",
-            dynamic_ncols=True,
-            leave=False,
-        )
-        for images, labels in train_progress:
+        for images, labels in train_loader:
             images = images.to(device_obj)
             labels = labels.to(device_obj)
             batch_size_curr = images.size(0)
@@ -456,10 +457,6 @@ def train_model(
             seen_samples += batch_size_curr
 
             current_lr = optimizer.param_groups[0]["lr"]
-            train_progress.set_postfix(
-                loss=f"{loss_value:.4f}",
-                lr=f"{current_lr:.2e}",
-            )
 
         if scheduler_obj is not None and not scheduler_batch_step:
             scheduler_obj.step()
@@ -480,12 +477,12 @@ def train_model(
             criterion=eval_criterion,
             amp_enabled=amp_enabled,
             num_classes=num_classes,
-            desc=f"验证 Epoch {epoch + 1}",
+            desc=f"验证 Epoch {epoch}",
         )
 
         history.append(
             {
-                "epoch": epoch + 1,
+                "epoch": epoch,
                 "train_loss": float(train_loss),
                 "train_accuracy": float(train_accuracy),
                 "train_top3_accuracy": float(train_top3),
@@ -498,7 +495,7 @@ def train_model(
 
         logger.info(
             "Epoch %s/%s 完成: train_loss=%.4f, train_acc=%.4f, train_top3=%.4f, val_loss=%.4f, val_acc=%.4f, val_macro_f1=%.4f, val_precision=%.4f, val_recall=%.4f, val_top3=%.4f",
-            epoch + 1,
+            epoch,
             epochs,
             train_loss,
             train_accuracy,
@@ -511,6 +508,12 @@ def train_model(
             val_metrics["top3_accuracy"],
         )
 
+        epoch_progress.set_postfix(
+            train_loss=f"{train_loss:.4f}",
+            val_loss=f"{val_metrics['loss']:.4f}",
+            lr=f"{current_lr:.2e}",
+        )
+
         score = val_metrics.get(monitor_metric, 0.0)
         improved = score > best_score + 1e-6
         if improved or best_state is None:
@@ -520,11 +523,11 @@ def train_model(
                 key: float(value) if isinstance(value, (int, float)) else value
                 for key, value in val_metrics.items()
             }
-            best_metrics["epoch"] = epoch + 1
+            best_metrics["epoch"] = epoch
             best_metrics["train_loss"] = float(train_loss)
             best_metrics["train_accuracy"] = float(train_accuracy)
             best_metrics["train_top3_accuracy"] = float(train_top3)
-            best_epoch = epoch + 1
+            best_epoch = epoch
             no_improve_epochs = 0
             per_class_str = ", ".join(
                 f"{digit}:{acc:.4f}" for digit, acc in enumerate(val_metrics["per_class_accuracy"])
