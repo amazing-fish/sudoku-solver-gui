@@ -18,7 +18,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-默认会训练 3 个周期，每次运行都会重新训练并在终端打印识别出来的数独棋盘内容。如果需要自定义训练与推理参数，可以使用以下可选参数：
+默认会训练 3 个周期，并在终端输出包含损失、准确率、F1 等多种指标的详细日志，同时自动保存表现最佳的模型权重。如果需要自定义训练与推理参数，可以使用以下可选参数：
 
 ```bash
 python main.py \
@@ -27,6 +27,14 @@ python main.py \
   --epochs 5 \
   --batch-size 256 \
   --learning-rate 5e-4 \
+  --weight-decay 1e-4 \
+  --scheduler cosine \
+  --patience 15 \
+  --min-delta 5e-5 \
+  --target-metric f1_macro \
+  --grad-clip-norm 1.0 \
+  --no-amp \
+  --no-save-last \
   --device cpu  # 或 cuda
 ```
 
