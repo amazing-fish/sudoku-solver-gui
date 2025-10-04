@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import hashlib
+import logging
+import os
 from pathlib import Path
+import json
+import time
 from typing import Tuple
 
 import numpy as np
@@ -9,9 +14,16 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 from torch.utils.data import Dataset
 
-_MEAN = 0.1307
-_STD = 0.3081
-_FONT_PATH = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+from .preprocess import PREPROCESS_VERSION, preprocess_cell_batch
+
+logger = logging.getLogger(__name__)
+
+_FONT_PATH = Path(
+    os.environ.get(
+        "SUDOKU_FONT_PATH",
+        r"C:\\ProgramData\\kingsoft\\office6\\omath\\DejaVuMathTeXGyre.ttf",
+    )
+)
 
 
 @dataclass
@@ -37,6 +49,66 @@ class SyntheticDigitDataset(Dataset):
         self.config = config or SyntheticDigitConfig()
         if not _FONT_PATH.exists():
             raise FileNotFoundError(f"未找到字体文件: {_FONT_PATH}")
+        logger.info("加载字体文件: %s", _FONT_PATH)
+
+        backend = self.config.preprocess_backend.lower()
+        if backend not in {"cpu", "gpu"}:
+            raise ValueError(f"不支持的预处理后端: {backend}")
+
+        if self.config.synthesis_batch_size <= 0:
+            raise ValueError("synthesis_batch_size 必须为正整数")
+        if self.config.progress_interval <= 0:
+            raise ValueError("progress_interval 必须大于 0")
+
+        device_str = self.config.device
+        if isinstance(device_str, str):
+            device_str = device_str.lower()
+        if device_str == "auto":
+            device_str = "cuda" if (backend == "gpu" and torch.cuda.is_available()) else "cpu"
+
+        self.preprocess_backend = backend
+        self.preprocess_device = torch.device(device_str)
+
+        if self.preprocess_backend == "gpu" and self.preprocess_device.type != "cuda":
+            if torch.cuda.is_available():
+                logger.info("GPU 预处理需要 CUDA，自动切换到可用设备 cuda:0")
+                self.preprocess_device = torch.device("cuda")
+            else:
+                logger.warning("请求 GPU 预处理但当前环境不支持 CUDA，回退到 CPU 后端")
+                self.preprocess_backend = "cpu"
+                self.preprocess_device = torch.device("cpu")
+
+        if self.preprocess_backend == "gpu" and not torch.cuda.is_available():
+            logger.warning("CUDA 设备不可用，自动回退到 CPU 预处理后端")
+            self.preprocess_backend = "cpu"
+            self.preprocess_device = torch.device("cpu")
+
+        if self.preprocess_backend == "gpu":
+            logger.info(
+                "预处理后端: GPU, 设备=%s, 批大小=%s", 
+                self.preprocess_device,
+                self.config.synthesis_batch_size,
+            )
+        else:
+            logger.info("预处理后端: CPU, 批大小=%s", self.config.synthesis_batch_size)
+
+        # 更新配置以反映实际运行参数，确保缓存键准确
+        self.config.preprocess_backend = self.preprocess_backend
+        self.config.device = str(self.preprocess_device)
+
+        metadata = self._build_metadata()
+        cache_key = self._build_cache_key(metadata)
+        cache_path = _CACHE_DIR / f"synthetic_digits_{cache_key}.pt"
+        if cache_path.exists():
+            payload = torch.load(cache_path, map_location="cpu")
+            self.images = payload["images"]
+            self.labels = payload["labels"]
+            logger.info(
+                "从缓存加载合成数据集: 文件=%s, 样本数=%s",
+                cache_path,
+                self.labels.numel(),
+            )
+            return
 
         rng = np.random.default_rng(self.config.seed)
         self.images: list[torch.Tensor] = []
@@ -187,7 +259,27 @@ class SyntheticDigitDataset(Dataset):
         return tensor
 
     def __len__(self) -> int:  # type: ignore[override]
-        return len(self.labels)
+        return int(self.labels.numel())
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:  # type: ignore[override]
-        return self.images[index], self.labels[index]
+        image = self.images[index]
+        label = self.labels[index]
+        if isinstance(label, torch.Tensor):
+            label = int(label.item())
+        return image, label
+
+    def _build_metadata(self) -> dict[str, object]:
+        config_dict = asdict(self.config)
+        config_dict["angle_range"] = list(config_dict["angle_range"])
+        font_stat = _FONT_PATH.stat()
+        return {
+            "config": config_dict,
+            "font_path": str(_FONT_PATH.resolve()),
+            "font_mtime": font_stat.st_mtime,
+            "font_size": font_stat.st_size,
+            "preprocess_version": PREPROCESS_VERSION,
+        }
+
+    def _build_cache_key(self, metadata: dict[str, object]) -> str:
+        serialized = json.dumps(metadata, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha1(serialized.encode("utf-8")).hexdigest()

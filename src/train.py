@@ -40,6 +40,13 @@ def _prepare_dataloaders(batch_size: int) -> tuple[DataLoader, DataLoader]:
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    logger.info(
+        "数据加载完成: train_size=%s, test_size=%s, batch_size=%s, 合成预处理后端=%s",
+        len(train_dataset),
+        len(test_dataset),
+        batch_size,
+        preprocess_backend,
+    )
     return train_loader, test_loader
 
 
@@ -221,8 +228,8 @@ def train_model(
         total_samples = 0
 
         for images, labels in train_loader:
-            images = images.to(device)
-            labels = labels.to(device)
+            images = images.to(device_obj)
+            labels = labels.to(device_obj)
 
             optimizer.zero_grad(set_to_none=True)
 

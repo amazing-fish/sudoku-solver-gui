@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -100,6 +101,31 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="仅训练模型而跳过数独识别",
     )
+    parser.add_argument(
+        "--synthetic-backend",
+        type=str,
+        default="cpu",
+        choices=["cpu", "gpu"],
+        help="合成数据预处理后端，可选 cpu 或 gpu",
+    )
+    parser.add_argument(
+        "--synthetic-device",
+        type=str,
+        default="auto",
+        help="GPU 预处理设备标识，默认为 auto 自动选择",
+    )
+    parser.add_argument(
+        "--synthetic-batch-size",
+        type=int,
+        default=256,
+        help="合成数据预处理批大小",
+    )
+    parser.add_argument(
+        "--synthetic-progress-interval",
+        type=float,
+        default=2.0,
+        help="合成数据进度日志的时间间隔（秒）",
+    )
     return parser.parse_args()
 
 
@@ -108,7 +134,28 @@ def main() -> None:
     model_path = args.model_path
     image_path = args.image_path
 
-    print("开始训练数字识别模型……")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger(__name__)
+
+    logger.info(
+        "命令行参数: model_path=%s, image_path=%s, epochs=%s, batch_size=%s, learning_rate=%s, device=%s, skip_inference=%s, synthetic_backend=%s, synthetic_device=%s, synthetic_batch_size=%s, synthetic_progress_interval=%s",
+        model_path,
+        image_path,
+        args.epochs,
+        args.batch_size,
+        args.learning_rate,
+        args.device,
+        args.skip_inference,
+        args.synthetic_backend,
+        args.synthetic_device,
+        args.synthetic_batch_size,
+        args.synthetic_progress_interval,
+    )
+
+    logger.info("开始训练数字识别模型……")
     train_model(
         model_path=model_path,
         epochs=args.epochs,
@@ -126,27 +173,24 @@ def main() -> None:
     )
 
     if args.skip_inference:
-        print("已根据参数跳过数独识别阶段。")
+        logger.info("已根据参数跳过数独识别阶段。")
         return
 
     try:
         from src.sudoku_infer import format_grid, predict_sudoku
     except ModuleNotFoundError as exc:  # pragma: no cover - 运行时检查
         missing = exc.name or ""
-        print(
-            "数独识别所需的依赖未安装。"
-            f" 缺失模块: {missing}\n"
-            "请先执行 `pip install -r requirements.txt` 再重新运行，"
-            "或使用 --skip-inference 仅训练模型。"
+        logger.error(
+            "数独识别所需的依赖未安装，缺失模块: %s。请先执行 `pip install -r requirements.txt` 或使用 --skip-inference。",
+            missing,
         )
         return
 
-    print("开始进行数独图片识别……")
+    logger.info("开始进行数独图片识别……")
     if not image_path.exists():
-        print(
-            "未找到数独图片:"
-            f" {image_path.resolve()}\n请先将待识别的 PNG 图片放置到该路径，"
-            "或通过 --image-path 指定图片位置。"
+        logger.error(
+            "未找到数独图片: %s，请放置 PNG 图片或使用 --image-path 指定。",
+            image_path.resolve(),
         )
         return
 
@@ -156,8 +200,7 @@ def main() -> None:
         device=args.device,
     )
 
-    print("识别得到的数独棋盘：")
-    print(format_grid(grid))
+    logger.info("识别得到的数独棋盘：\n%s", format_grid(grid))
 
 
 if __name__ == "__main__":
