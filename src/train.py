@@ -7,6 +7,7 @@ from pathlib import Path
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from .dataset import SyntheticDigitConfig, SyntheticDigitDataset
 from .model import create_model
@@ -128,7 +129,13 @@ def train_model(
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    for epoch in range(epochs):
+    epoch_iterable = tqdm(
+        range(1, epochs + 1),
+        desc="Epochs",
+        unit="epoch",
+    )
+
+    for epoch in epoch_iterable:
         model.train()
         running_loss = 0.0
         for images, labels in train_loader:
@@ -146,8 +153,8 @@ def train_model(
         train_loss = running_loss / len(train_loader.dataset)
         test_accuracy = evaluate(model, test_loader, device_obj)
         logger.info(
-            "Epoch %s/%s 完成: train_loss=%.4f, test_acc=%.4f",
-            epoch + 1,
+            "Epoch %s/%s 完成: train_loss=%.6f, test_acc=%.4f",
+            epoch,
             epochs,
             train_loss,
             test_accuracy,
