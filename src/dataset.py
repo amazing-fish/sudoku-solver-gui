@@ -138,6 +138,7 @@ class SyntheticDigitDataset(Dataset):
 
         produced = 0
         total_attempts = 0
+        last_logged_produced = -1
         for digit in digits:
             generated = 0
             digit_attempts = 0
@@ -165,9 +166,12 @@ class SyntheticDigitDataset(Dataset):
                     pending.clear()
 
                 now = time.perf_counter()
+                progress_changed = produced != last_logged_produced
                 should_log = False
-                if produced > 0 and (
-                    produced % progress_step == 0 or produced == total_target
+                if (
+                    progress_changed
+                    and produced > 0
+                    and (produced % progress_step == 0 or produced == total_target)
                 ):
                     should_log = True
                 if now - last_progress >= self.config.progress_interval:
@@ -190,6 +194,8 @@ class SyntheticDigitDataset(Dataset):
                         total_attempts,
                     )
                     last_progress = now
+                    if progress_changed:
+                        last_logged_produced = produced
 
             if pending:
                 accepted = self._process_pending(

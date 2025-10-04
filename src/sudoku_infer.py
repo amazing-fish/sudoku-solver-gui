@@ -56,7 +56,16 @@ def load_model(model_path: str | Path, device: str | torch.device | None = None)
 
     logger.info("加载模型: %s，目标设备: %s", Path(model_path).resolve(), device_obj)
     model = create_model()
-    state_dict = torch.load(model_path, map_location=device_obj)
+    payload = torch.load(model_path, map_location=device_obj)
+    if isinstance(payload, dict) and "model_state" in payload:
+        state_dict = payload["model_state"]
+        logger.info(
+            "加载带元数据的检查点: epoch=%s, 可用指标=%s",
+            payload.get("epoch") or payload.get("metrics", {}).get("epoch"),
+            list(payload.get("metrics", {}).keys()),
+        )
+    else:
+        state_dict = payload
     model.load_state_dict(state_dict)
     model.to(device_obj)
     model.eval()
