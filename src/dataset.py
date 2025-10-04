@@ -101,6 +101,7 @@ class SyntheticDigitDataset(Dataset):
         metadata = self._build_metadata()
         cache_key = self._build_cache_key(metadata)
         cache_path = _CACHE_DIR / f"synthetic_digits_{cache_key}.pt"
+        self._gpu_fallback_logged_digits: set[int] = set()
         if cache_path.exists():
             payload = torch.load(cache_path, map_location="cpu")
             self.images = payload["images"]
@@ -257,10 +258,12 @@ class SyntheticDigitDataset(Dataset):
 
         mask = blanks if digit == 0 else ~blanks
         if not np.any(mask) and self.preprocess_backend == "gpu":
-            logger.info(
-                "digit=%s 的 GPU 预处理批次未筛出有效样本，回退到 CPU 预处理以避免长时间重试。",
-                digit,
-            )
+            if digit not in self._gpu_fallback_logged_digits:
+                logger.info(
+                    "digit=%s 的 GPU 预处理批次未筛出有效样本，回退到 CPU 预处理以避免长时间重试。",
+                    digit,
+                )
+                self._gpu_fallback_logged_digits.add(digit)
             data, blanks = _run_preprocess("cpu")
             mask = blanks if digit == 0 else ~blanks
 
