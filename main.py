@@ -43,10 +43,57 @@ def parse_args() -> argparse.Namespace:
         help="训练使用的学习率",
     )
     parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=1e-4,
+        help="AdamW 优化器的权重衰减系数",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,
         help="训练与推理使用的计算设备 (cpu/cuda)",
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="cosine",
+        choices=["cosine", "reduce_on_plateau", "none"],
+        help="学习率调度策略",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=20,
+        help="早停耐心值（连续多少轮无提升后停止训练）",
+    )
+    parser.add_argument(
+        "--min-delta",
+        type=float,
+        default=1e-4,
+        help="视为指标提升所需的最小增量",
+    )
+    parser.add_argument(
+        "--target-metric",
+        type=str,
+        default="f1_macro",
+        help="用于早停与保存最佳模型的评估指标名称",
+    )
+    parser.add_argument(
+        "--grad-clip-norm",
+        type=float,
+        default=1.0,
+        help="梯度裁剪的最大范数，设为 <=0 则关闭",
+    )
+    parser.add_argument(
+        "--no-amp",
+        action="store_true",
+        help="关闭自动混合精度训练",
+    )
+    parser.add_argument(
+        "--no-save-last",
+        action="store_true",
+        help="仅保存最佳模型，不额外保存最后一轮模型",
     )
     parser.add_argument(
         "--skip-inference",
@@ -68,6 +115,14 @@ def main() -> None:
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         device=args.device,
+        weight_decay=args.weight_decay,
+        scheduler_type=args.scheduler,
+        early_stopping_patience=args.patience,
+        early_stopping_min_delta=args.min_delta,
+        target_metric=args.target_metric,
+        grad_clip_norm=args.grad_clip_norm if args.grad_clip_norm > 0 else None,
+        use_amp=not args.no_amp,
+        save_last=not args.no_save_last,
     )
 
     if args.skip_inference:
