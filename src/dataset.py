@@ -6,7 +6,7 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 from torch.utils.data import Dataset
 
 _MEAN = 0.1307
@@ -16,15 +16,22 @@ _FONT_PATH = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 
 @dataclass
 class SyntheticDigitConfig:
-    samples_per_digit: int = 400
+    samples_per_digit: int = 800
     image_size: int = 28
     angle_range: Tuple[float, float] = (-15, 15)
     noise_std: float = 0.05
     seed: int = 42
+    max_grid_offset: int = 5
+    line_width_range: Tuple[int, int] = (1, 3)
+    digit_scale_range: Tuple[float, float] = (0.65, 0.95)
+    digit_color_range: Tuple[int, int] = (0, 40)
+    background_intensity_range: Tuple[int, int] = (215, 255)
+    cell_intensity_range: Tuple[int, int] = (220, 255)
+    blank_intensity_range: Tuple[int, int] = (185, 240)
 
 
 class SyntheticDigitDataset(Dataset):
-    """Generate synthetic digit images similar to the Sudoku font."""
+    """生成包含空白格的合成数独数字样本。"""
 
     def __init__(self, config: SyntheticDigitConfig | None = None) -> None:
         self.config = config or SyntheticDigitConfig()
@@ -41,32 +48,138 @@ class SyntheticDigitDataset(Dataset):
                 self.images.append(tensor)
                 self.labels.append(digit)
 
-    def _create_sample(self, digit: int, rng: np.random.Generator) -> torch.Tensor:
-        size = self.config.image_size
-        canvas_size = size * 2
-        image = Image.new("L", (canvas_size, canvas_size), color=255)
-        draw = ImageDraw.Draw(image)
-        font_size = int(rng.integers(low=size + 6, high=size + 14))
+    def to_pil(self, index: int) -> Image.Image:
+        array = self.images[index].squeeze(0).numpy()
+        array = array * _STD + _MEAN
+        array = np.clip(array, 0.0, 1.0)
+        return Image.fromarray((array * 255).astype(np.uint8), mode="L")
+
+    def render_ascii(self, index: int, levels: str = " .:-=+*#%@") -> str:
+        array = self.images[index].squeeze(0).numpy()
+        array = array * _STD + _MEAN
+        array = np.clip(array, 0.0, 1.0)
+        scaled = np.floor(array * (len(levels) - 1)).astype(int)
+        lines = ["".join(levels[val] for val in row) for row in scaled]
+        return "\n".join(lines)
+
+    def _render_digit_layer(
+        self, digit: int, rng: np.random.Generator, target_span: int
+    ) -> Image.Image:
+        base_side = max(target_span * 2, self.config.image_size)
+        canvas = Image.new("L", (base_side, base_side), color=0)
+        draw = ImageDraw.Draw(canvas)
+        font_scale = rng.uniform(0.7, 1.1)
+        font_size = max(12, int(target_span * font_scale))
         font = ImageFont.truetype(str(_FONT_PATH), font_size)
         text = str(digit)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
-        max_x = max(0, canvas_size - text_w)
-        max_y = max(0, canvas_size - text_h)
-        offset_x = int(rng.integers(0, max_x + 1))
-        offset_y = int(rng.integers(0, max_y + 1))
-        draw.text((offset_x, offset_y), text, font=font, fill=0)
+        x = (canvas.width - text_w) / 2 - bbox[0]
+        y = (canvas.height - text_h) / 2 - bbox[1]
+        draw.text((x, y), text, font=font, fill=255)
         angle = float(rng.uniform(*self.config.angle_range))
-        image = image.rotate(angle, resample=Image.BILINEAR, fillcolor=255)
-
-        inverted = ImageOps.invert(image)
-        bbox = inverted.getbbox()
+        rotated = canvas.rotate(angle, resample=Image.BICUBIC, expand=True, fillcolor=0)
+        bbox = rotated.getbbox()
         if bbox is not None:
-            inverted = inverted.crop(bbox)
-        inverted = inverted.resize((size, size), Image.BILINEAR)
+            rotated = rotated.crop(bbox)
+        return rotated
 
-        array = np.array(inverted, dtype=np.float32) / 255.0
+    def _resize_with_aspect(self, image: Image.Image, target_span: int) -> Image.Image:
+        width, height = image.size
+        if max(width, height) == 0:
+            return image
+        scale = target_span / max(width, height)
+        new_w = max(1, int(round(width * scale)))
+        new_h = max(1, int(round(height * scale)))
+        return image.resize((new_w, new_h), Image.BICUBIC)
+
+    def _create_sample(self, digit: int, rng: np.random.Generator) -> torch.Tensor:
+        size = self.config.image_size
+        bg_color = int(
+            rng.integers(
+                self.config.background_intensity_range[0],
+                self.config.background_intensity_range[1] + 1,
+            )
+        )
+        image = Image.new("L", (size, size), color=bg_color)
+        draw = ImageDraw.Draw(image)
+
+        max_offset = min(self.config.max_grid_offset, size // 4)
+        for _ in range(10):
+            pad_top = int(rng.integers(0, max_offset + 1))
+            pad_bottom = int(rng.integers(0, max_offset + 1))
+            pad_left = int(rng.integers(0, max_offset + 1))
+            pad_right = int(rng.integers(0, max_offset + 1))
+            line_width = int(
+                rng.integers(self.config.line_width_range[0], self.config.line_width_range[1] + 1)
+            )
+            inner_width = size - pad_left - pad_right - 2 * line_width
+            inner_height = size - pad_top - pad_bottom - 2 * line_width
+            if inner_width > size * 0.4 and inner_height > size * 0.4:
+                break
+        else:
+            pad_top = pad_bottom = pad_left = pad_right = max_offset // 2
+            line_width = max(1, self.config.line_width_range[0])
+
+        left = pad_left
+        top = pad_top
+        right = size - pad_right - 1
+        bottom = size - pad_bottom - 1
+
+        line_color = int(rng.integers(70, 140))
+        draw.rectangle([left, top, right, bottom], outline=line_color, width=line_width)
+
+        inner_left = left + line_width
+        inner_top = top + line_width
+        inner_right = right - line_width
+        inner_bottom = bottom - line_width
+
+        if inner_left >= inner_right or inner_top >= inner_bottom:
+            inner_left = max(inner_left, 0)
+            inner_top = max(inner_top, 0)
+            inner_right = min(inner_right, size - 1)
+            inner_bottom = min(inner_bottom, size - 1)
+
+        if digit == 0:
+            blank_intensity = int(
+                rng.integers(
+                    self.config.blank_intensity_range[0], self.config.blank_intensity_range[1] + 1
+                )
+            )
+            draw.rectangle([inner_left, inner_top, inner_right, inner_bottom], fill=blank_intensity)
+        else:
+            cell_intensity = int(
+                rng.integers(
+                    self.config.cell_intensity_range[0], self.config.cell_intensity_range[1] + 1
+                )
+            )
+            draw.rectangle([inner_left, inner_top, inner_right, inner_bottom], fill=cell_intensity)
+
+            inner_width = max(1, inner_right - inner_left)
+            inner_height = max(1, inner_bottom - inner_top)
+            target_span = int(
+                min(inner_width, inner_height)
+                * rng.uniform(self.config.digit_scale_range[0], self.config.digit_scale_range[1])
+            )
+            target_span = max(8, target_span)
+            digit_layer = self._render_digit_layer(digit, rng, target_span)
+            digit_layer = self._resize_with_aspect(digit_layer, target_span)
+
+            available_x = max(0, inner_width - digit_layer.size[0])
+            available_y = max(0, inner_height - digit_layer.size[1])
+            offset_x = int(rng.integers(0, available_x + 1)) if available_x > 0 else 0
+            offset_y = int(rng.integers(0, available_y + 1)) if available_y > 0 else 0
+
+            position_x = inner_left + offset_x
+            position_y = inner_top + offset_y
+            digit_color = int(
+                rng.integers(self.config.digit_color_range[0], self.config.digit_color_range[1] + 1)
+            )
+            glyph = Image.new("L", digit_layer.size, color=digit_color)
+            image.paste(glyph, (position_x, position_y), digit_layer)
+
+        array = np.array(image, dtype=np.float32) / 255.0
         noise = rng.normal(loc=0.0, scale=self.config.noise_std, size=array.shape).astype(np.float32)
         array = np.clip(array + noise, 0.0, 1.0).astype(np.float32)
         array = (array - _MEAN) / _STD
